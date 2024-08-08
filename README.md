@@ -45,6 +45,11 @@ To run command on the QA environment, provide the QA controller URL.
 ```angular2html
 ./cleanup.py -S <sitename>
 ```
+To run command on the QA environment, provide the QA controller URL.
+```angular2html
+./cleanup.py -S <sitename> -C https://qa.api.sase.paloaltonetworks.com
+```
+
 This deletes the device shells, circuits, disables the site and then deletes the site object.
 
 ### Help Text:
