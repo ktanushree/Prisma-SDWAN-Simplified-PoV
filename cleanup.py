@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 """
-Script to setup Prisma SDWAN Simplified PoV
+Script to cleanup Prisma SDWAN Simplified PoV
 Author: tkamath@paloaltonetworks.com
 Version: 1.0.0b1
 """
