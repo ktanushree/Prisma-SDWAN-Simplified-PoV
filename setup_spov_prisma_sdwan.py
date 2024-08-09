@@ -3,7 +3,7 @@
 """
 Script to setup Prisma SDWAN Simplified PoV
 Author: tkamath@paloaltonetworks.com
-Version: 1.0.0b1
+Version: 1.0.0b2
 """
 import prisma_sase
 import argparse
@@ -37,7 +37,7 @@ try:
         NUM_PRIVATE, PRIVATEWAN_CATEGORY, PRIVATEWAN_PROVIDER, \
         PRIVATEWAN_IP_PREFIX, PRIVATEWAN_GW, PRIVATEWAN_DNS, \
         PRIMARY_INTERNET_INTERFACE, SECONDARY_INTERNET_INTERFACE, PRIVATEWAN_INTERFACE, PRIVATEWAN_CIRCUITNAME, \
-        VLAN_IDS, LAN_INTERFACE, VLAN_CONFIG
+        LAN_INTERFACE, VLAN_CONFIG
 
 except ImportError:
     print("ERR: Could not import PoV configuration settings from prismasase_settings.py. Using default values to configure Branch site")
@@ -61,12 +61,6 @@ except ImportError:
     PRIMARY_INTERNET_INTERFACE = "1"
     SECONDARY_INTERNET_INTERFACE = "2"
     PRIVATEWAN_INTERFACE = "2"
-    VLAN_IDS = {
-        510: "HA",
-        520: "GUEST",
-        530: "VOICE",
-        540: "DATA"
-    }
     LAN_INTERFACE = "5"
 
 ##############################################################################
@@ -1047,29 +1041,29 @@ def go():
         else:
             print("Private Circuit Label: {} already exists".format(category))
 
-    # print("Enabling LQM for WAN Interface Labels")
-    # resp = sase_session.get.waninterfacelabels()
-    # if resp.cgx_status:
-    #     labels = resp.cgx_content.get("items", None)
-    #
-    #     for label in labels:
-    #         if label["label"] in circuitname_label_map.keys():
-    #             labelname = circuitname_label_map[label["label"]]
-    #             label["name"] = labelname
-    #
-    #         label["use_lqm_for_non_hub_paths"] = True
-    #         label["lqm_enabled"] = True
-    #         label["bwc_enabled"] = True
-    #
-    #         resp = sase_session.put.waninterfacelabels(data=label, waninterfacelabel_id=label["id"])
-    #         if resp.cgx_status:
-    #             print("\t{} updated".format(label["name"]))
-    #         else:
-    #             print("ERR: Could not update WAN Interface Label {}[{}]".format(label["label"], label["name"]))
-    #             prisma_sase.jd_detailed(resp)
-    # else:
-    #     print("ERR: Could not retrieve WAN Interface Labels")
-    #     prisma_sase.jd_detailed(resp)
+    print("Enabling LQM for WAN Interface Labels")
+    resp = sase_session.get.waninterfacelabels()
+    if resp.cgx_status:
+        labels = resp.cgx_content.get("items", None)
+
+        for label in labels:
+            if label["label"] in circuitname_label_map.keys():
+                labelname = circuitname_label_map[label["label"]]
+                label["name"] = labelname
+
+            label["use_lqm_for_non_hub_paths"] = True
+            label["lqm_enabled"] = True
+            label["bwc_enabled"] = True
+
+            resp = sase_session.put.waninterfacelabels(data=label, waninterfacelabel_id=label["id"])
+            if resp.cgx_status:
+                print("\t{} updated".format(label["name"]))
+            else:
+                print("ERR: Could not update WAN Interface Label {}[{}]".format(label["label"], label["name"]))
+                prisma_sase.jd_detailed(resp)
+    else:
+        print("ERR: Could not retrieve WAN Interface Labels")
+        prisma_sase.jd_detailed(resp)
 
     ##############################################################################
     # Configure Security Zones

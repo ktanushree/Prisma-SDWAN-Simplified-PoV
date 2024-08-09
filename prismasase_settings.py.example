@@ -1,4 +1,7 @@
 ######################################################
+# Version: 1.0.0b2
+######################################################
+######################################################
 # Service Account
 ######################################################
 PRISMASASE_CLIENT_ID="client_id"
@@ -7,7 +10,7 @@ PRISMASASE_TSG_ID="tsg_id"
 ######################################################
 # Branch Topology
 ######################################################
-SITE_NAME="Branch_DualInternet_3200"
+SITE_NAME="Branch_DualInternet_3200_HAtest"
 ADDRESS_CITY="New York"
 ADDRESS_COUNTRY="United States"
 
@@ -19,9 +22,12 @@ ADDRESS_STATE=""
 ADDRESS_ZIPCODE=""
 ADDRESS_LATITUDE="40.7127492"
 ADDRESS_LONGITUDE="-74.0059945"
-
 #
-# MODEL - Allowed values: 1200S, 3200, 5200, 3102v, 3104v, 3108v
+# Service & DC Group
+#
+BRANCH_DOMAIN="Preset Domain"
+#
+# MODEL - Allowed values: 1200S, 3200, 5200
 #
 BRANCH_MODEL="3200"
 
@@ -56,16 +62,26 @@ PRIVATEWAN_CIRCUITNAME="MPLS Circuit"
 # Interface Configuration
 ######################################################
 PRIMARY_INTERNET_INTERFACE="1"
-SECONDARY_INTERNET_INTERFACE="34"
-PRIVATEWAN_INTERFACE="34"
-LAN_INTERFACE="5"
+PRIMARY_INTERNET_IP_PREFIX="10.20.30.1/24"
+PRIMARY_INTERNET_GW="10.20.30.10"
+PRIMARY_INTERNET_DNS=["8.8.8.8", "8.8.4.4"]
 
+SECONDARY_INTERNET_INTERFACE="34"
+SECONDARY_INTERNET_IP_PREFIX="dhcp"
+SECONDARY_INTERNET_GW="dhcp"
+SECONDARY_INTERNET_DNS=["8.8.8.8", "8.8.4.4"]
+
+PRIVATEWAN_INTERFACE="34"
+PRIVATEWAN_IP_PREFIX="dhcp"
+PRIVATEWAN_GW="dhcp"
+PRIVATEWAN_DNS=["8.8.8.8", "8.8.4.4"]
+
+LAN_INTERFACE="5"
 ######################################################
 # LAN Configuration
 ######################################################
-VLAN_IDS = {
-    510: "HA",
-    520: "GUEST",
-    530: "VOICE",
-    540:"DATA"
-}
+VLAN_CONFIG = [ {"vlan_id": 510, "name": "HA", "ip_prefix": "10.20.10.1/24", "gw": "10.20.10.10", "dns": ["8.8.8.8", "8.8.4.4"], "used_for": "ha", "scope": "global"},
+                {"vlan_id": 520, "name": "GUEST", "ip_prefix": "10.20.20.1/24", "gw": "10.20.20.10", "dns": ["8.8.8.8", "8.8.4.4"], "used_for": "lan", "scope": "local"},
+                {"vlan_id": 530, "name": "VOICE", "ip_prefix": "10.20.30.1/24", "gw": "10.20.30.10", "dns": ["8.8.8.8", "8.8.4.4"], "used_for": "lan", "scope": "local"},
+                {"vlan_id": 540, "name": "DATA", "ip_prefix": "10.20.40.1/24", "gw": "10.20.40.10", "dns": ["8.8.8.8", "8.8.4.4"], "used_for": "lan", "scope": "local"}]
+
