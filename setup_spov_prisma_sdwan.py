@@ -11,6 +11,7 @@ import os
 import time
 import sys
 import datetime
+import copy
 ##############################################################################
 # Service Account Details -
 # Create a Service Account at the Master tenant level
@@ -30,10 +31,14 @@ try:
         SITE_NAME, ADDRESS_CITY, ADDRESS_COUNTRY, \
         ADDRESS_STREET, ADDRESS_STATE, ADDRESS_ZIPCODE, ADDRESS_LONGITUDE, ADDRESS_LATITUDE, \
         NUM_INTERNET, PRIMARY_INTERNET_CATEGORY, PRIMARY_INTERNET_PROVIDER, PRIMARY_INTERNET_CIRCUITNAME, \
+        PRIMARY_INTERNET_IP_PREFIX, PRIMARY_INTERNET_GW, PRIMARY_INTERNET_DNS, \
         SECONDARY_INTERNET_CATEGORY, SECONDARY_INTERNET_PROVIDER, SECONDARY_INTERNET_CIRCUITNAME, \
+        SECONDARY_INTERNET_IP_PREFIX, SECONDARY_INTERNET_GW, SECONDARY_INTERNET_DNS, \
         NUM_PRIVATE, PRIVATEWAN_CATEGORY, PRIVATEWAN_PROVIDER, \
+        PRIVATEWAN_IP_PREFIX, PRIVATEWAN_GW, PRIVATEWAN_DNS, \
         PRIMARY_INTERNET_INTERFACE, SECONDARY_INTERNET_INTERFACE, PRIVATEWAN_INTERFACE, PRIVATEWAN_CIRCUITNAME, \
-        VLAN_IDS, LAN_INTERFACE
+        VLAN_IDS, LAN_INTERFACE, VLAN_CONFIG
+
 except ImportError:
     print("ERR: Could not import PoV configuration settings from prismasase_settings.py. Using default values to configure Branch site")
     BRANCH_MODEL = "1200S"
@@ -310,6 +315,26 @@ BYPASSPAIR_TEMPLATE = {
             "lan_state_propagation": False
         }
 }
+
+IPV4_TEMPLATE_STATIC = {
+  "dhcp_config": None,
+  "dns_v4_config": {
+    "name_servers": ["8.8.8.8", "8.8.4.4"]
+  },
+  "routes": [
+    {
+      "destination": "0.0.0.0/0",
+      "via": "gw"
+    }
+  ],
+  "static_config": {
+    "address": "ip_prefix"
+  },
+  "type": "static"
+}
+
+IPV4_TEMPLATE_DHCP = {"dhcp_config":None,"dns_v4_config":None,"routes":None,"static_config":None,"type":"dhcp"}
+
 ##############################################################################
 # Set Global dicts & variables
 ##############################################################################
@@ -627,7 +652,7 @@ def create_dicts(sase_session):
     return
 
 
-def config_interfaces(sase_session, interface_mapping, usedfor_mapping, vlan_ids, site_id, element_id, ion_model):
+def config_interfaces(sase_session, interface_mapping, interface_ipconfig, usedfor_mapping, vlan_ids, site_id, element_id, ion_model):
     interfaces = []
     interface_id_name={}
     interface_name_id = {}
@@ -642,10 +667,10 @@ def config_interfaces(sase_session, interface_mapping, usedfor_mapping, vlan_ids
         print("ERR: Could not retrieve interfaces")
         prisma_sase.jd_detailed(resp)
 
-    #
+    #######################################################################
     # Create Bypass Pair 34
     # todo: Look for bypasspairs in the interface names and create ports
-    #
+    #######################################################################
     bp_child = {}
     for intf in interfaces:
         if intf["name"] in ["3", "4"]:
@@ -661,7 +686,7 @@ def config_interfaces(sase_session, interface_mapping, usedfor_mapping, vlan_ids
                 print("ERR: Could not set interface {} admin up".format(intf["name"]))
                 prisma_sase.jd_detailed(resp)
 
-    bypasspair_data = BYPASSPAIR_TEMPLATE
+    bypasspair_data = copy.deepcopy(BYPASSPAIR_TEMPLATE)
     if "v" in ion_model:
         bypasspair_data["bypass_pair"] = {
             "lan": bp_child["4"],
@@ -686,13 +711,17 @@ def config_interfaces(sase_session, interface_mapping, usedfor_mapping, vlan_ids
         print("ERR: Could not create bypasspair 34")
         prisma_sase.jd_detailed(resp)
 
-    #
+    #######################################################################
     # Check for ION model and create subinterface or SVI
-    #
+    #######################################################################
+    vlan_config = interface_ipconfig[LAN_INTERFACE]
+    #######################################################################
+    # Create Subinterface
+    #######################################################################
     if ion_model in ["3200", "5200", "9200", "3102v", "3104v", "3108v"]:
-        #
+        #######################################################################
         # Get LAN Interface ID, set admin up
-        #
+        #######################################################################
         laninterface_id = interface_name_id[LAN_INTERFACE]
         resp = sase_session.get.elementshells_interfaces(site_id=site_id,
                                                          elementshell_id=element_id,
@@ -700,6 +729,7 @@ def config_interfaces(sase_session, interface_mapping, usedfor_mapping, vlan_ids
         if resp.cgx_status:
             intf = resp.cgx_content
             intf["admin_up"] = True
+            #intf["ipv4_config"]=interface_ipconfig[intf["name"]]
 
             resp = sase_session.put.elementshells_interfaces(site_id=site_id,
                                                              elementshell_id=element_id,
@@ -714,26 +744,31 @@ def config_interfaces(sase_session, interface_mapping, usedfor_mapping, vlan_ids
             print("ERR: Could not get LAN interface")
             prisma_sase.jd_detailed(resp)
 
-        #
+        #######################################################################
         # Create Subinterfaces on LAN Interface
-        #
-        for vlanid in vlan_ids.keys():
-            vlanname = vlan_ids[vlanid]
-            subinterface_data = SUBINTERFACE_TEMPLATE
-            if vlanname == "HA":
-                subinterface_data["scope"] = "global"
-                subinterface_data["used_for"] = "ha"
-            else:
-                subinterface_data["scope"] = "local"
-                subinterface_data["used_for"] = "lan"
-
-
+        #######################################################################
+        for item in vlan_config:
+            vlanid = item["vlan_id"]
+            vlanname = item["name"]
+            subinterface_data = copy.deepcopy(SUBINTERFACE_TEMPLATE)
+            subinterface_data["scope"] = item["scope"]
+            subinterface_data["used_for"] = item["used_for"]
             subinterface_data["parent"] = laninterface_id
             subinterface_data["description"] = vlanname
             subinterface_data["sub_interface"] = {
-                "vlan_id": vlanid,
+                "vlan_id": item["vlan_id"],
                 "native_vlan": None
             }
+            if item["ip_prefix"] != "dhcp":
+                config = {
+                    "dhcp_config": None,
+                    "dns_v4_config": {"name_servers": item["dns"]},
+                    "routes": [{"destination": "0.0.0.0/0", "via": item["gw"]}],
+                    "static_config": {"address": item["ip_prefix"]},
+                    "type": "static"
+                }
+                subinterface_data["ipv4_config"]=config
+
             subinterface_data["vrf_context_id"] = GLOBALVRFID
             resp = sase_session.post.elementshells_interfaces(site_id=site_id,
                                                               elementshell_id=element_id,
@@ -746,14 +781,14 @@ def config_interfaces(sase_session, interface_mapping, usedfor_mapping, vlan_ids
                 sys.exit()
 
     else:
-        #
+        #######################################################################
         # Create SVIs
-        #
-        print("{} ION 1: ".format(SITE_NAME))
-        for vlanid in vlan_ids.keys():
-            vlanname = vlan_ids[vlanid]
+        #######################################################################
+        for item in vlan_config:
+            vlanname = item["name"]
+            vlanid = item["vlan_id"]
 
-            svi_data = SVI_TEMPLATE
+            svi_data = copy.deepcopy(SVI_TEMPLATE)
             svi_data["name"] = vlanname
             svi_data["description"] = vlanname
             svi_data["admin_up"] = True
@@ -764,11 +799,17 @@ def config_interfaces(sase_session, interface_mapping, usedfor_mapping, vlan_ids
                 "mstp_instance": 0,
                 "auto_op_state": False
             }
-            if vlanname == "HA":
-                svi_data["scope"] = "global"
-                svi_data["used_fod"] = "ha"
-            else:
-                svi_data["scope"] = "local"
+            svi_data["scope"] = item["scope"]
+            svi_data["used_for"] = item["used_for"]
+            if item["ip_prefix"] != "dhcp":
+                config = {
+                    "dhcp_config": None,
+                    "dns_v4_config": {"name_servers": item["dns"]},
+                    "routes": [{"destination": "0.0.0.0/0", "via": item["gw"]}],
+                    "static_config": {"address": item["ip_prefix"]},
+                    "type": "static"
+                }
+                svi_data["ipv4_config"]=config
 
             resp = sase_session.post.elementshells_interfaces(site_id=site_id,
                                                               elementshell_id=element_id,
@@ -780,16 +821,16 @@ def config_interfaces(sase_session, interface_mapping, usedfor_mapping, vlan_ids
                 prisma_sase.jd_detailed(resp)
                 sys.exit()
 
-        vlans = list(vlan_ids.keys())
         for intf in interfaces:
             if intf["name"] == LAN_INTERFACE:
                 intf["admin_up"] = True
+                #intf["ipv4_config"]=interface_ipconfig[intf["name"]]
                 intf["switch_port_config"] = {
                     "vlan_mode": "trunk",
                     "voice_vlan_id": None,
                     "native_vlan_id": None,
                     "access_vlan_id": None,
-                    "trunk_vlans": vlans,
+                    "trunk_vlans": vlan_ids,
                     "stp_port_enabled": True,
                     "stp_port_priority": 128,
                     "stp_port_cost": 4,
@@ -807,7 +848,7 @@ def config_interfaces(sase_session, interface_mapping, usedfor_mapping, vlan_ids
                                                                  interface_id=intf["id"],
                                                                  data=intf)
                 if resp.cgx_status:
-                    print("\t\tInterface {} updated with VLANs {}".format(intf["name"], vlans))
+                    print("\t\tInterface {} updated with VLANs {}".format(intf["name"], vlan_ids))
                 else:
                     print("ERR: Could not update interface {}".format(intf["name"]))
                     prisma_sase.jd_detailed(resp)
@@ -824,13 +865,7 @@ def config_interfaces(sase_session, interface_mapping, usedfor_mapping, vlan_ids
 
             intf["site_wan_interface_ids"] = [interface_mapping[intf["name"]]]
             intf["admin_up"] = True
-            intf["ipv4_config"] = {
-                "type": "dhcp",
-                "static_config": None,
-                "dhcp_config": None,
-                "dns_v4_config": None,
-                "routes": None
-            }
+            intf["ipv4_config"] = interface_ipconfig[intf["name"]]
             resp = sase_session.put.elementshells_interfaces(site_id=site_id,
                                                              elementshell_id=element_id,
                                                              interface_id=intf["id"],
@@ -876,12 +911,10 @@ def go():
     #############################################################################
     args = vars(parser.parse_args())
     controller=args["controller"]
-
     #############################################################################
     # Global Variables
     #############################################################################
     global NGFWPOLICYSETID
-
     ##############################################################################
     # Instantiate SDK & Login
     ##############################################################################
@@ -896,7 +929,6 @@ def go():
     if sase_session.tenant_id is None:
         print("ERR: Service Account login failure. Please check client credentials")
         sys.exit()
-
     ##############################################################################
     # WAN Networks
     ##############################################################################
@@ -1015,29 +1047,29 @@ def go():
         else:
             print("Private Circuit Label: {} already exists".format(category))
 
-    print("Enabling LQM for WAN Interface Labels")
-    resp = sase_session.get.waninterfacelabels()
-    if resp.cgx_status:
-        labels = resp.cgx_content.get("items", None)
-
-        for label in labels:
-            if label["label"] in circuitname_label_map.keys():
-                labelname = circuitname_label_map[label["label"]]
-                label["name"] = labelname
-
-            label["use_lqm_for_non_hub_paths"] = True
-            label["lqm_enabled"] = True
-            label["bwc_enabled"] = True
-
-            resp = sase_session.put.waninterfacelabels(data=label, waninterfacelabel_id=label["id"])
-            if resp.cgx_status:
-                print("\t{} updated".format(label["name"]))
-            else:
-                print("ERR: Could not update WAN Interface Label {}[{}]".format(label["label"], label["name"]))
-                prisma_sase.jd_detailed(resp)
-    else:
-        print("ERR: Could not retrieve WAN Interface Labels")
-        prisma_sase.jd_detailed(resp)
+    # print("Enabling LQM for WAN Interface Labels")
+    # resp = sase_session.get.waninterfacelabels()
+    # if resp.cgx_status:
+    #     labels = resp.cgx_content.get("items", None)
+    #
+    #     for label in labels:
+    #         if label["label"] in circuitname_label_map.keys():
+    #             labelname = circuitname_label_map[label["label"]]
+    #             label["name"] = labelname
+    #
+    #         label["use_lqm_for_non_hub_paths"] = True
+    #         label["lqm_enabled"] = True
+    #         label["bwc_enabled"] = True
+    #
+    #         resp = sase_session.put.waninterfacelabels(data=label, waninterfacelabel_id=label["id"])
+    #         if resp.cgx_status:
+    #             print("\t{} updated".format(label["name"]))
+    #         else:
+    #             print("ERR: Could not update WAN Interface Label {}[{}]".format(label["label"], label["name"]))
+    #             prisma_sase.jd_detailed(resp)
+    # else:
+    #     print("ERR: Could not retrieve WAN Interface Labels")
+    #     prisma_sase.jd_detailed(resp)
 
     ##############################################################################
     # Configure Security Zones
@@ -1078,7 +1110,7 @@ def go():
         print("ERR: Site {} already exists. Please choose a different site".format(SITE_NAME))
         sys.exit()
 
-    site_data = SITE_TEMPLATE
+    site_data = copy.deepcopy(SITE_TEMPLATE)
     site_data["name"] = SITE_NAME
     site_data["address"] = {
         "street": ADDRESS_STREET,
@@ -1118,7 +1150,7 @@ def go():
     ##############################################################################
     PRIMARY_INTERNET_CIRCUITID=None
     SECONDARY_INTERNET_CIRCUITID=None
-    priint_data = SWI_TEMPLATE
+    priint_data = copy.deepcopy(SWI_TEMPLATE)
     priint_data["name"]=PRIMARY_INTERNET_CIRCUITNAME
     priint_data["type"]="publicwan"
     priint_data["network_id"]= wannwpub_name_id[PRIMARY_INTERNET_PROVIDER]
@@ -1135,7 +1167,7 @@ def go():
         sys.exit()
 
     if NUM_INTERNET == 2:
-        secint_data = SWI_TEMPLATE
+        secint_data = copy.deepcopy(SWI_TEMPLATE)
         secint_data["name"] = SECONDARY_INTERNET_CIRCUITNAME
         secint_data["type"] = "publicwan"
         secint_data["network_id"] = wannwpub_name_id[SECONDARY_INTERNET_PROVIDER]
@@ -1155,7 +1187,7 @@ def go():
     ##############################################################################
     PRIVATEWAN_CIRCUITID=None
     if NUM_PRIVATE > 0:
-        priwan_data = SWI_TEMPLATE
+        priwan_data = copy.deepcopy(SWI_TEMPLATE)
         priwan_data["name"] = PRIVATEWAN_CIRCUITNAME
         priwan_data["type"] = "privatewan"
         priwan_data["network_id"] = wannwpri_name_id[PRIVATEWAN_PROVIDER]
@@ -1256,40 +1288,168 @@ def go():
     usedfor_mapping_ion1={}
     interface_mapping_ion2={}
     usedfor_mapping_ion2={}
+    interface_ipconfig_ion1 ={}
+    interface_ipconfig_ion2 ={}
 
+    ##############################################################################
+    # LAN Interface on ION 1 & ION 2
+    ##############################################################################
+    # if LAN_IP_PREFIX == "dhcp":
+    #     interface_ipconfig_ion1[LAN_INTERFACE] = IPV4_TEMPLATE_DHCP
+    #     interface_ipconfig_ion2[LAN_INTERFACE] = IPV4_TEMPLATE_DHCP
+    # else:
+    #     config = {
+    #         "dhcp_config": None,
+    #         "dns_v4_config": {"name_servers": LAN_DNS},
+    #         "routes": [{"destination": "0.0.0.0/0", "via": LAN_GW}],
+    #         "static_config": {"address": LAN_IP_PREFIX},
+    #         "type": "static"
+    #     }
+    #     interface_ipconfig_ion1[LAN_INTERFACE] = config
+    #     interface_ipconfig_ion2[LAN_INTERFACE] = config
+    ##############################################################################
+    # VLAN IDs on ION 1 & ION 2
+    ##############################################################################
+    VLAN_IDS = []
+    for item in VLAN_CONFIG:
+        VLAN_IDS.append(item["vlan_id"])
+
+    interface_ipconfig_ion1[LAN_INTERFACE]=VLAN_CONFIG
+    interface_ipconfig_ion2[LAN_INTERFACE]=VLAN_CONFIG
+    ##############################################################################
+    # Primary Internet on ION 1
+    ##############################################################################
     interface_mapping_ion1[PRIMARY_INTERNET_INTERFACE] = PRIMARY_INTERNET_CIRCUITID
     usedfor_mapping_ion1[PRIMARY_INTERNET_INTERFACE]="public"
+    if PRIMARY_INTERNET_IP_PREFIX == "dhcp":
+        interface_ipconfig_ion1[PRIMARY_INTERNET_INTERFACE] = IPV4_TEMPLATE_DHCP
+    else:
+        config = {
+            "dhcp_config": None,
+            "dns_v4_config": {"name_servers": PRIMARY_INTERNET_DNS},
+            "routes": [{"destination": "0.0.0.0/0", "via": PRIMARY_INTERNET_GW}],
+            "static_config": {"address": PRIMARY_INTERNET_IP_PREFIX},
+            "type": "static"
+        }
+        interface_ipconfig_ion1[PRIMARY_INTERNET_INTERFACE] = config
 
     if NUM_INTERNET > 1:
+        ##############################################################################
+        # Secondary Internet on ION 1
+        ##############################################################################
         interface_mapping_ion1[SECONDARY_INTERNET_INTERFACE] = SECONDARY_INTERNET_CIRCUITID
         usedfor_mapping_ion1[SECONDARY_INTERNET_INTERFACE] = "public"
+        if SECONDARY_INTERNET_IP_PREFIX == "dhcp":
+            interface_ipconfig_ion1[SECONDARY_INTERNET_INTERFACE] = IPV4_TEMPLATE_DHCP
+        else:
+            config = {
+                "dhcp_config": None,
+                "dns_v4_config": {"name_servers": SECONDARY_INTERNET_DNS},
+                "routes": [{"destination": "0.0.0.0/0", "via": SECONDARY_INTERNET_GW}],
+                "static_config": {"address": SECONDARY_INTERNET_IP_PREFIX},
+                "type": "static"
+            }
+            interface_ipconfig_ion1[SECONDARY_INTERNET_INTERFACE] = config
 
+        ##############################################################################
+        # Primary Internet on ION 2
+        ##############################################################################
         interface_mapping_ion2[SECONDARY_INTERNET_INTERFACE] = PRIMARY_INTERNET_CIRCUITID
         usedfor_mapping_ion2[SECONDARY_INTERNET_INTERFACE] = "public"
+        if PRIMARY_INTERNET_IP_PREFIX == "dhcp":
+            interface_ipconfig_ion2[SECONDARY_INTERNET_INTERFACE] = IPV4_TEMPLATE_DHCP
+        else:
+            config = {
+                "dhcp_config": None,
+                "dns_v4_config": {"name_servers": PRIMARY_INTERNET_DNS},
+                "routes": [{"destination": "0.0.0.0/0", "via": PRIMARY_INTERNET_GW}],
+                "static_config": {"address": PRIMARY_INTERNET_IP_PREFIX},
+                "type": "static"
+            }
+            interface_ipconfig_ion2[SECONDARY_INTERNET_INTERFACE] = config
+
+        ##############################################################################
+        # Secondary Internet on ION 2
+        ##############################################################################
         interface_mapping_ion2[PRIMARY_INTERNET_INTERFACE] = SECONDARY_INTERNET_CIRCUITID
         usedfor_mapping_ion2[PRIMARY_INTERNET_INTERFACE] = "public"
+        if SECONDARY_INTERNET_IP_PREFIX == "dhcp":
+            interface_ipconfig_ion2[PRIMARY_INTERNET_INTERFACE] = IPV4_TEMPLATE_DHCP
+        else:
+            config = {
+                "dhcp_config": None,
+                "dns_v4_config": {"name_servers": SECONDARY_INTERNET_DNS},
+                "routes": [{"destination": "0.0.0.0/0", "via": SECONDARY_INTERNET_GW}],
+                "static_config": {"address": SECONDARY_INTERNET_IP_PREFIX},
+                "type": "static"
+            }
+            interface_ipconfig_ion2[PRIMARY_INTERNET_INTERFACE] = config
 
     if NUM_PRIVATE > 0:
+        ##############################################################################
+        # Private WAN on ION 1
+        ##############################################################################
         interface_mapping_ion1[PRIVATEWAN_INTERFACE] = PRIVATEWAN_CIRCUITID
         usedfor_mapping_ion1[PRIVATEWAN_INTERFACE] = "private"
+        if PRIVATEWAN_IP_PREFIX == "dhcp":
+            interface_ipconfig_ion1[PRIVATEWAN_INTERFACE] = IPV4_TEMPLATE_DHCP
+        else:
+            config = {
+                "dhcp_config": None,
+                "dns_v4_config": {"name_servers": PRIVATEWAN_DNS},
+                "routes": [{"destination": "0.0.0.0/0", "via": PRIVATEWAN_GW}],
+                "static_config": {"address": PRIVATEWAN_IP_PREFIX},
+                "type": "static"
+            }
+            interface_ipconfig_ion1[PRIVATEWAN_INTERFACE] = config
 
+        ##############################################################################
+        # Primary Internet on ION 2
+        ##############################################################################
         interface_mapping_ion2[PRIVATEWAN_INTERFACE] = PRIMARY_INTERNET_CIRCUITID
         usedfor_mapping_ion2[PRIVATEWAN_INTERFACE] = "public"
+        if PRIMARY_INTERNET_IP_PREFIX == "dhcp":
+            interface_ipconfig_ion2[PRIVATEWAN_INTERFACE] = IPV4_TEMPLATE_DHCP
+        else:
+            config = {
+                "dhcp_config": None,
+                "dns_v4_config": {"name_servers": PRIMARY_INTERNET_DNS},
+                "routes": [{"destination": "0.0.0.0/0", "via": PRIMARY_INTERNET_GW}],
+                "static_config": {"address": PRIMARY_INTERNET_IP_PREFIX},
+                "type": "static"
+            }
+            interface_ipconfig_ion2[PRIVATEWAN_INTERFACE] = config
+
+        ##############################################################################
+        # Primary WAN on ION 2
+        ##############################################################################
         interface_mapping_ion2[PRIMARY_INTERNET_INTERFACE] = PRIVATEWAN_CIRCUITID
         usedfor_mapping_ion2[PRIMARY_INTERNET_INTERFACE] = "private"
+        if PRIVATEWAN_IP_PREFIX == "dhcp":
+            interface_ipconfig_ion2[PRIMARY_INTERNET_INTERFACE] = IPV4_TEMPLATE_DHCP
+        else:
+            config = {
+                "dhcp_config": None,
+                "dns_v4_config": {"name_servers": PRIVATEWAN_DNS},
+                "routes": [{"destination": "0.0.0.0/0", "via": PRIVATEWAN_GW}],
+                "static_config": {"address": PRIVATEWAN_IP_PREFIX},
+                "type": "static"
+            }
+            interface_ipconfig_ion2[PRIMARY_INTERNET_INTERFACE] = config
 
 
     print("\t{} ION 1".format(SITE_NAME))
     config_interfaces(sase_session=sase_session, interface_mapping=interface_mapping_ion1,
-                      usedfor_mapping=usedfor_mapping_ion1, vlan_ids=VLAN_IDS,
-                      site_id=SITE_ID, element_id=ELEM_SHELL_ID_1, ion_model=BRANCH_MODEL)
+                      interface_ipconfig=interface_ipconfig_ion1, usedfor_mapping=usedfor_mapping_ion1,
+                      vlan_ids=VLAN_IDS, site_id=SITE_ID,
+                      element_id=ELEM_SHELL_ID_1, ion_model=BRANCH_MODEL)
 
     if HA:
         print("\t{} ION 2".format(SITE_NAME))
         config_interfaces(sase_session=sase_session, interface_mapping=interface_mapping_ion2,
-                          usedfor_mapping=usedfor_mapping_ion2, vlan_ids=VLAN_IDS,
-                          site_id=SITE_ID, element_id=ELEM_SHELL_ID_2, ion_model=BRANCH_MODEL)
-
+                          interface_ipconfig=interface_ipconfig_ion2, usedfor_mapping=usedfor_mapping_ion2,
+                          vlan_ids=VLAN_IDS, site_id=SITE_ID,
+                          element_id=ELEM_SHELL_ID_2, ion_model=BRANCH_MODEL)
 
     ##############################################################################
     # Create Security Policy Rules
