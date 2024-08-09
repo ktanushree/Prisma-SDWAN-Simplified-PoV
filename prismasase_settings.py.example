@@ -27,7 +27,7 @@ ADDRESS_LONGITUDE="-74.0059945"
 #
 BRANCH_DOMAIN="Preset Domain"
 #
-# MODEL - Allowed values: 1200S, 3200, 5200
+# MODEL - Allowed values: 1200S, 3200, 5200, 3102v, 3104v, 3108v
 #
 BRANCH_MODEL="3200"
 
