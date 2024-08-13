@@ -1,7 +1,7 @@
 ## Simplified PoV Configuration Scripts
 These are scripts for configuring Prisma SDWAN branch sites and policies on tenants spun up for Simplified PoV.
 
-The script will refer to the [prismasase_settings.py](https://bitbucket.paloaltonetworks.local/projects/CGTME/repos/spov/browse/prismasase_settings.py.example) file for details on how the SDWAN brnach must be configured.
+The script will refer to the [prismasase_settings.py](https://github.com/ktanushree/Prisma-SDWAN-Simplified-PoV/blob/main/prismasase_settings.py.example) file for details on how the SDWAN brnach must be configured.
 Configuration parameters like device model, site name, HA, circuit provider, interface details can all be provided via the **prismasase_settings.py** file. Default values are included in the prismasase_settings.py file, which the users can choose to override. 
 
 ### Requirements
