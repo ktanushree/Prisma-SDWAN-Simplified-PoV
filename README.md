@@ -4,6 +4,20 @@ These are scripts for configuring Prisma SDWAN branch sites and policies on tena
 The script will refer to the [prismasase_settings.py](https://bitbucket.paloaltonetworks.local/projects/CGTME/repos/spov/browse/prismasase_settings.py.example) file for details on how the SDWAN brnach must be configured.
 Configuration parameters like device model, site name, HA, circuit provider, interface details can all be provided via the **prismasase_settings.py** file. Default values are included in the prismasase_settings.py file, which the users can choose to override. 
 
+### Requirements
+* Active Prisma SD-WAN Account
+* Python >=3.6
+* Python modules:
+  * Prisma SASE Python SDK >= 6.4.1b1 - <https://github.com/PaloAltoNetworks/prisma-sase-sdk-python>
+
+### License
+MIT
+
+### Installation:
+ - **Github:** Download files to a local directory, manually run the scripts
+ - Install **prisma_sase** SDK using the command
+   ```pip install prisma_sase ```
+   
 ### Usage
 To configure the Simplified PoV tenant:
 1. Create a Service Account and assign it SuperUser access to the Prisma SDWAN App
@@ -32,19 +46,6 @@ To run command on the QA environment, provide the QA controller URL.
 ./cleanup.py -S <sitename>
 ```
 This deletes the device shells, circuits, disables the site and then deletes the site object.
-
-
-### Requirements
-* Active Prisma SD-WAN Account
-* Python >=3.6
-* Python modules:
-  * Prisma SASE Python SDK >= 6.2.3b1 - <https://github.com/PaloAltoNetworks/prisma-sase-sdk-python>
-
-### License
-MIT
-
-### Installation:
- - **Github:** Download files to a local directory, manually run the scripts
 
 
 ### Help Text:
