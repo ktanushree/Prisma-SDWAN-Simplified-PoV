@@ -3,7 +3,7 @@
 """
 Script to setup Prisma SDWAN Simplified PoV
 Author: tkamath@paloaltonetworks.com
-Version: 1.0.0b2
+Version: 1.0.0b3
 """
 import prisma_sase
 import argparse
@@ -58,6 +58,9 @@ def go():
     config_group.add_argument("--controller", "-C", help="Controller URL",
                               default="https://api.sase.paloaltonetworks.com")
     config_group.add_argument("--site_name", "-S", help="Name of the Site",default=None)
+    config_group.add_argument("--customer_name", "-CN", help="Name of the Customer",default=None)
+    config_group.add_argument("--policy_only", "-P", help="Clean up Policy Only",default=False)
+
 
     #############################################################################
     # Parse arguments.
@@ -65,7 +68,8 @@ def go():
     args = vars(parser.parse_args())
     controller = args["controller"]
     site_name = args["site_name"]
-
+    customer_name = args["customer_name"]
+    policy_only = args["policy_only"]
     #############################################################################
     # Global Variables
     #############################################################################
@@ -94,6 +98,87 @@ def go():
     ##############################################################################
     create_dicts(sase_session)
 
+    ##############################################################################
+    # Reset NW Stack Name
+    ##############################################################################
+    resp = sase_session.get.networkpolicysetstacks()
+    if resp.cgx_status:
+        itemlist = resp.cgx_content.get("items", None)
+        for item in itemlist:
+            if item["default_policysetstack"]:
+                name = item["name"].replace(customer_name,"")
+                item["name"] = name
+                resp = sase_session.put.networkpolicysetstacks(networkpolicysetstack_id=item["id"], data=item)
+                if resp.cgx_status:
+                    print("NW Stack name updated to {}".format(item["name"]))
+                else:
+                    print("ERR: Could not update NW Stack name")
+                    prisma_sase.jd_detailed(resp)
+    else:
+        print("ERR: Could not retrieve NW Stack")
+        prisma_sase.jd_detailed(resp)
+
+    ##############################################################################
+    # Reset QoS Stack Name
+    ##############################################################################
+    resp = sase_session.get.prioritypolicysetstacks()
+    if resp.cgx_status:
+        itemlist = resp.cgx_content.get("items", None)
+        for item in itemlist:
+            if item["default_policysetstack"]:
+                name = item["name"].replace(customer_name,"")
+                item["name"] = name
+                resp = sase_session.put.prioritypolicysetstacks(prioritypolicysetstack_id=item["id"], data=item)
+                if resp.cgx_status:
+                    print("QoS Stack name updated to {}".format(item["name"]))
+                else:
+                    print("ERR: Could not update QoS Stack name")
+                    prisma_sase.jd_detailed(resp)
+    else:
+        print("ERR: Could not retrieve QoS Stack")
+        prisma_sase.jd_detailed(resp)
+
+    ##############################################################################
+    # Reset NAT Stack Name
+    ##############################################################################
+    resp = sase_session.get.natpolicysetstacks()
+    if resp.cgx_status:
+        itemlist = resp.cgx_content.get("items", None)
+        for item in itemlist:
+            if item["default_policysetstack"]:
+                name = item["name"].replace(customer_name,"")
+                item["name"] = name
+                resp = sase_session.put.natpolicysetstacks(natpolicysetstack_id=item["id"], data=item)
+                if resp.cgx_status:
+                    print("NAT Stack name updated to {}".format(item["name"]))
+                else:
+                    print("ERR: Could not update NAT Stack name")
+                    prisma_sase.jd_detailed(resp)
+    else:
+        print("ERR: Could not retrieve NAT Stack")
+        prisma_sase.jd_detailed(resp)
+    ##############################################################################
+    # Reset NGFW Stack Name
+    ##############################################################################
+    resp = sase_session.get.ngfwsecuritypolicysetstacks()
+    if resp.cgx_status:
+        itemlist = resp.cgx_content.get("items", None)
+        for item in itemlist:
+            if customer_name in item["name"]:
+                name = item["name"].replace(customer_name,"")
+                item["name"] = name
+                resp = sase_session.put.ngfwsecuritypolicysetstacks(ngfwsecuritypolicysetstack_id=item["id"], data=item)
+                if resp.cgx_status:
+                    print("NGFW Stack name updated to {}".format(item["name"]))
+                else:
+                    print("ERR: Could not update NGFW Stack name")
+                    prisma_sase.jd_detailed(resp)
+    else:
+        print("ERR: Could not retrieve NGFW Stack")
+        prisma_sase.jd_detailed(resp)
+
+    if policy_only == "True":
+        sys.exit()
     ##############################################################################
     # Create Site
     ##############################################################################
@@ -199,21 +284,20 @@ def go():
     if resp.cgx_status:
         smaps = resp.cgx_content.get("items", None)
         for smap in smaps:
-            if smap["name"] == "Preset Domain":
-                smap["service_bindings"] = []
-                resp = sase_session.put.servicebindingmaps(servicebindingmap_id=smap["id"], data=smap)
-                if resp.cgx_status:
-                    print("Servicebinding removed from Preset Domain")
+            smap["service_bindings"] = []
+            resp = sase_session.put.servicebindingmaps(servicebindingmap_id=smap["id"], data=smap)
+            if resp.cgx_status:
+                print("Servicebinding removed from {}".format(smap["name"]))
 
-                    resp = sase_session.delete.servicebindingmaps(servicebindingmap_id=smap["id"])
-                    if resp.cgx_status:
-                        print("Preset Domain deleted")
-                    else:
-                        print("ERR: Could not delete Preset Domain")
-                        prisma_sase.jd_detailed(resp)
+                resp = sase_session.delete.servicebindingmaps(servicebindingmap_id=smap["id"])
+                if resp.cgx_status:
+                    print("Preset Domain deleted")
                 else:
-                    print("ERR: Could not update Preset Domain")
+                    print("ERR: Could not delete Preset Domain")
                     prisma_sase.jd_detailed(resp)
+            else:
+                print("ERR: Could not update Preset Domain")
+                prisma_sase.jd_detailed(resp)
     else:
         print("ERR: Could not get servicebindingmaps")
         prisma_sase.jd_detailed(resp)
@@ -243,6 +327,24 @@ def go():
     else:
         print("ERR: Could not delete Site SPoV DC")
         prisma_sase.jd_detailed(resp)
+
+    ##############################################################################
+    # Delete WAN Networks
+    ##############################################################################
+    print("Deleting WAN Networks")
+    resp = sase_session.get.wannetworks()
+    if resp.cgx_status:
+        itemlist = resp.cgx_content.get("items", None)
+        for item in itemlist:
+            resp = sase_session.delete.wannetworks(wannetwork_id=item["id"])
+            if resp.cgx_status:
+                print("\t{} Deleted".format(item["name"]))
+            else:
+                print("\t{} Could not be deleted".format(item["name"]))
+    else:
+        print("ERR: Could not retrieve WAN Networks")
+        prisma_sase.jd_detailed(resp)
+
 
     return
 
