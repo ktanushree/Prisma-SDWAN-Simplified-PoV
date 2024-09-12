@@ -3,7 +3,7 @@
 """
 Script to setup Prisma SDWAN Simplified PoV using a CSV
 Author: tkamath@paloaltonetworks.com
-Version: 1.0.0b3
+Version: 1.0.0b4
 """
 import prisma_sase
 import argparse
@@ -1015,48 +1015,52 @@ def config_interfaces(sase_session, interface_mapping, interface_ipconfig, usedf
         prisma_sase.jd_detailed(resp)
 
     #######################################################################
-    # Create Bypass Pair 34
-    # todo: Look for bypasspairs in the interface names and create ports
+    # Look for Bypass pair in interface_mapping
+    # Create Bypass pair, if present
     #######################################################################
-    bp_child = {}
-    for intf in interfaces:
-        if intf["name"] in ["3", "4"]:
-            bp_child[intf["name"]] = intf["id"]
-            intf["admin_up"] = True
-            resp = sase_session.put.elementshells_interfaces(site_id=site_id,
-                                                             elementshell_id=element_id,
-                                                             interface_id=intf["id"],
-                                                             data=intf)
-            if resp.cgx_status:
-                print("\t\tInterface {} set to admin up".format(intf["name"]))
-            else:
-                print("ERR: Could not set interface {} admin up".format(intf["name"]))
-                prisma_sase.jd_detailed(resp)
+    for intfkey in interface_mapping.keys():
+        if "bypass_" in intfkey:
+            child_interfaces = intfkey.replace("bypass_", "")
 
-    bypasspair_data = copy.deepcopy(BYPASSPAIR_TEMPLATE)
-    if "v" in ion_model:
-        bypasspair_data["bypass_pair"] = {
-            "lan": bp_child["4"],
-            "wan": bp_child["3"],
-            "use_relay": False,
-            "lan_state_propagation": False
-        }
-    else:
-        bypasspair_data["bypass_pair"] = {
-            "lan": bp_child["4"],
-            "wan": bp_child["3"],
-            "use_relay": True,
-            "lan_state_propagation": False
-        }
-    resp = sase_session.post.elementshells_interfaces(site_id=site_id,
-                                                      elementshell_id=element_id,
-                                                      data=bypasspair_data)
-    if resp.cgx_status:
-        print("\t\tBypasspair 34 created")
-        interfaces.append(resp.cgx_content)
-    else:
-        print("ERR: Could not create bypasspair 34")
-        prisma_sase.jd_detailed(resp)
+            bp_child = {}
+            for intf in interfaces:
+                if intf["name"] in [child_interfaces[0], child_interfaces[1]]:
+                    bp_child[intf["name"]] = intf["id"]
+                    intf["admin_up"] = True
+                    resp = sase_session.put.elementshells_interfaces(site_id=site_id,
+                                                                     elementshell_id=element_id,
+                                                                     interface_id=intf["id"],
+                                                                     data=intf)
+                    if resp.cgx_status:
+                        print("\t\tInterface {} set to admin up".format(intf["name"]))
+                    else:
+                        print("ERR: Could not set interface {} admin up".format(intf["name"]))
+                        prisma_sase.jd_detailed(resp)
+
+            bypasspair_data = copy.deepcopy(BYPASSPAIR_TEMPLATE)
+            if "v" in ion_model:
+                bypasspair_data["bypass_pair"] = {
+                    "lan": bp_child[child_interfaces[1]],
+                    "wan": bp_child[child_interfaces[0]],
+                    "use_relay": False,
+                    "lan_state_propagation": False
+                }
+            else:
+                bypasspair_data["bypass_pair"] = {
+                    "lan": bp_child[child_interfaces[1]],
+                    "wan": bp_child[child_interfaces[0]],
+                    "use_relay": True,
+                    "lan_state_propagation": False
+                }
+            resp = sase_session.post.elementshells_interfaces(site_id=site_id,
+                                                              elementshell_id=element_id,
+                                                              data=bypasspair_data)
+            if resp.cgx_status:
+                print("\t\tBypasspair {} created".format(child_interfaces))
+                interfaces.append(resp.cgx_content)
+            else:
+                print("ERR: Could not create bypasspair {}".format(child_interfaces))
+                prisma_sase.jd_detailed(resp)
 
     #######################################################################
     # Check for ION model and create subinterface or SVI
@@ -1341,7 +1345,10 @@ def go():
         ##############################################################################
         # WAN Networks
         ##############################################################################
-        WAN_NETWORKS_PUBLIC = [PRIMARY_INTERNET_PROVIDER, SECONDARY_INTERNET_PROVIDER]
+        WAN_NETWORKS_PUBLIC = [PRIMARY_INTERNET_PROVIDER]
+        if NUM_INTERNET > 1:
+            WAN_NETWORKS_PUBLIC.append(SECONDARY_INTERNET_PROVIDER)
+
         if NUM_PRIVATE > 0:
             WAN_NETWORKS_PRIVATE = [PRIVATEWAN_PROVIDER]
         else:
@@ -1408,7 +1415,10 @@ def go():
         ##############################################################################
         # Update Circuit Labels
         ##############################################################################
-        PUBLIC_CATEGORY=[PRIMARY_INTERNET_CATEGORY, SECONDARY_INTERNET_CATEGORY]
+        PUBLIC_CATEGORY=[PRIMARY_INTERNET_CATEGORY]
+        if NUM_INTERNET > 1:
+            PUBLIC_CATEGORY.append(SECONDARY_INTERNET_CATEGORY)
+
         if NUM_PRIVATE > 0:
             PRIVATE_CATEGORY = [PRIVATEWAN_CATEGORY]
         else:
@@ -1436,7 +1446,7 @@ def go():
         #
         # Update Circuit Labels
         #
-        circuitname_label_map={}
+        circuitname_label_map = {}
         # circuitname_label_map={
         #     "public-10": PRIMARY_INTERNET_CATEGORY,
         #     "public-11": SECONDARY_INTERNET_CATEGORY,
@@ -1462,29 +1472,29 @@ def go():
             else:
                 print("Private Circuit Label: {} already exists".format(category))
 
-        # print("Enabling LQM for WAN Interface Labels")
-        # resp = sase_session.get.waninterfacelabels()
-        # if resp.cgx_status:
-        #     labels = resp.cgx_content.get("items", None)
-        #
-        #     for label in labels:
-        #         if label["label"] in circuitname_label_map.keys():
-        #             labelname = circuitname_label_map[label["label"]]
-        #             label["name"] = labelname
-        #
-        #         label["use_lqm_for_non_hub_paths"] = True
-        #         label["lqm_enabled"] = True
-        #         label["bwc_enabled"] = True
-        #
-        #         resp = sase_session.put.waninterfacelabels(data=label, waninterfacelabel_id=label["id"])
-        #         if resp.cgx_status:
-        #             print("\t{} updated".format(label["name"]))
-        #         else:
-        #             print("ERR: Could not update WAN Interface Label {}[{}]".format(label["label"], label["name"]))
-        #             prisma_sase.jd_detailed(resp)
-        # else:
-        #     print("ERR: Could not retrieve WAN Interface Labels")
-        #     prisma_sase.jd_detailed(resp)
+        print("Enabling LQM for WAN Interface Labels")
+        resp = sase_session.get.waninterfacelabels()
+        if resp.cgx_status:
+            labels = resp.cgx_content.get("items", None)
+
+            for label in labels:
+                if label["label"] in circuitname_label_map.keys():
+                    labelname = circuitname_label_map[label["label"]]
+                    label["name"] = labelname
+
+                label["use_lqm_for_non_hub_paths"] = True
+                label["lqm_enabled"] = True
+                label["bwc_enabled"] = True
+
+                resp = sase_session.put.waninterfacelabels(data=label, waninterfacelabel_id=label["id"])
+                if resp.cgx_status:
+                    print("\t{} updated".format(label["name"]))
+                else:
+                    print("ERR: Could not update WAN Interface Label {}[{}]".format(label["label"], label["name"]))
+                    prisma_sase.jd_detailed(resp)
+        else:
+            print("ERR: Could not retrieve WAN Interface Labels")
+            prisma_sase.jd_detailed(resp)
 
         ##############################################################################
         # Configure Security Zones
@@ -1549,7 +1559,7 @@ def go():
         site_data["nat_policysetstack_id"] = NATSTACKID
 
         SITE_ID=None
-        resp = sase_session.post.sites(data=site_data, api_version='v4.11')
+        resp = sase_session.post.sites(data=site_data)
         if resp.cgx_status:
             print("Site {} created".format(SITE_NAME))
             SITE_ID = resp.cgx_content.get("id")
@@ -1730,7 +1740,9 @@ def go():
             VLAN_IDS.append(item["vlan_id"])
 
         interface_ipconfig_ion1[LAN_INTERFACE]=VLAN_CONFIG
-        interface_ipconfig_ion2[LAN_INTERFACE]=VLAN_CONFIG
+
+        if HA:
+            interface_ipconfig_ion2[LAN_INTERFACE]=VLAN_CONFIG
         ##############################################################################
         # Primary Internet on ION 1
         ##############################################################################
@@ -2134,55 +2146,62 @@ def go():
                 ##############################################################################
                 ha_intf_id = get_ha_interface_id(sase_session=sase_session, site_id=SITE_ID,
                                                  elemshell_id=ELEM_SHELL_ID_1)
-                resp = sase_session.get.elementshells(site_id=SITE_ID, elementshell_id=ELEM_SHELL_ID_1)
-                if resp.cgx_status:
-                    elem_data = resp.cgx_content
-                    elem_data["spoke_ha_config"] = {
-                        "cluster_id": cluster_id,
-                        "enable": True,
-                        "priority": 250,
-                        "source_interface": ha_intf_id,
-                        "track": None
-                    }
-                    resp = sase_session.put.elementshells(site_id=SITE_ID, elementshell_id=ELEM_SHELL_ID_1,
-                                                          data=elem_data)
-                    if resp.cgx_status:
-                        print("\t{} added to HA Cluster".format(elem_data["name"]))
-                    else:
-                        print("ERR: Could not add {} to HA cluster".format(elem_data["name"]))
-                        prisma_sase.jd_detailed(resp)
+                if ha_intf_id is None:
+                    print("WARN: No HA interface configured! Device cannot be bound to Spoke Cluster")
                 else:
-                    print("ERR: Could not retrieve elementshells")
-                    prisma_sase.jd_detailed(resp)
+                    resp = sase_session.get.elementshells(site_id=SITE_ID, elementshell_id=ELEM_SHELL_ID_1)
+                    if resp.cgx_status:
+                        elem_data = resp.cgx_content
+                        elem_data["spoke_ha_config"] = {
+                            "cluster_id": cluster_id,
+                            "enable": True,
+                            "priority": 250,
+                            "source_interface": ha_intf_id,
+                            "track": None
+                        }
+                        resp = sase_session.put.elementshells(site_id=SITE_ID, elementshell_id=ELEM_SHELL_ID_1,
+                                                              data=elem_data)
+                        if resp.cgx_status:
+                            print("\t{} added to HA Cluster".format(elem_data["name"]))
+                        else:
+                            print("ERR: Could not add {} to HA cluster".format(elem_data["name"]))
+                            prisma_sase.jd_detailed(resp)
+                    else:
+                        print("ERR: Could not retrieve elementshells")
+                        prisma_sase.jd_detailed(resp)
 
                 ##############################################################################
                 # Assign ION 2 to Spoke Cluster
                 ##############################################################################
                 ha_intf_id = get_ha_interface_id(sase_session=sase_session, site_id=SITE_ID,
                                                  elemshell_id=ELEM_SHELL_ID_2)
-                resp = sase_session.get.elementshells(site_id=SITE_ID, elementshell_id=ELEM_SHELL_ID_2)
-                if resp.cgx_status:
-                    elem_data = resp.cgx_content
-                    elem_data["spoke_ha_config"] = {
-                        "cluster_id": cluster_id,
-                        "enable": True,
-                        "priority": 210,
-                        "source_interface": ha_intf_id,
-                        "track": None
-                    }
-                    resp = sase_session.put.elementshells(site_id=SITE_ID, elementshell_id=ELEM_SHELL_ID_2,
-                                                          data=elem_data)
-                    if resp.cgx_status:
-                        print("\t{} added to HA Cluster".format(elem_data["name"]))
-                    else:
-                        print("ERR: Could not add {} to HA cluster".format(elem_data["name"]))
-                        prisma_sase.jd_detailed(resp)
+
+                if ha_intf_id is None:
+                    print("WARN: No HA interface configured! Device cannot be bound to Spoke Cluster")
                 else:
-                    print("ERR: Could not retrieve elementshells")
-                    prisma_sase.jd_detailed(resp)
+                    resp = sase_session.get.elementshells(site_id=SITE_ID, elementshell_id=ELEM_SHELL_ID_2)
+                    if resp.cgx_status:
+                        elem_data = resp.cgx_content
+                        elem_data["spoke_ha_config"] = {
+                            "cluster_id": cluster_id,
+                            "enable": True,
+                            "priority": 210,
+                            "source_interface": ha_intf_id,
+                            "track": None
+                        }
+                        resp = sase_session.put.elementshells(site_id=SITE_ID, elementshell_id=ELEM_SHELL_ID_2,
+                                                              data=elem_data)
+                        if resp.cgx_status:
+                            print("\t{} added to HA Cluster".format(elem_data["name"]))
+                        else:
+                            print("ERR: Could not add {} to HA cluster".format(elem_data["name"]))
+                            prisma_sase.jd_detailed(resp)
+                    else:
+                        print("ERR: Could not retrieve elementshells")
+                        prisma_sase.jd_detailed(resp)
 
             else:
-                print("ERR: Could not configure spokeclusters")
+                print("ERR: Could not create spokeclusters")
                 prisma_sase.jd_detailed(resp)
 
     ##############################################################################

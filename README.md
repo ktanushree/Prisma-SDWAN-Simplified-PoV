@@ -17,8 +17,13 @@ PRISMASASE_CLIENT_SECRET="client_secret"
 PRISMASASE_TSG_ID="tsg_id"
 ```
 
-3. Download the CSV file with the configuration details as provided in the Google Form
-4. Execute the **setup_prismasdwanspov.py** script
+3. Download the CSV file with the configuration details as provided in the Google Form. 
+
+Important Note: If using a bypasspair interface, please prefix the interface name with the string **_bypass__** i.e. **bypass_< wanport >< lanport>** in the google form. Eg: for bypasspair 34, the interface name in the form should be **bypass_34**. 
+- Port 3 will be configured as the WAN port
+- Port 4 will be configured as the LAN port
+
+5. Execute the **setup_prismasdwanspov.py** script
 ```angular2html
 ./setup_prismasdwanspov.py -F <csvfilename>
 ```
@@ -29,7 +34,7 @@ To run command on the QA environment, provide the QA controller URL.
 
 5. To delete a site deployed using the above script, you can use the **cleanup.py** script.
 ```angular2html
-./cleanup.py -S <sitename>
+./cleanup.py -S <site_name> -CN <customer_name>
 ```
 This deletes the device shells, circuits, disables the site and then deletes the site object.
 
@@ -95,6 +100,7 @@ Config:
 ## Version
 | Version | Build | Changes |
 | ------- | ----- | ------- |
-| **1.0.0** | **b3** | Added script **setup_prismasdwanspov.py** that configures based on data provided via CSV. Moved older scripts to folder **config_scripts_v1**  |
+| **1.0.0** | **b4** | Bug fixes. Added enhancement to handle bypass pair ports. See README for details |
+|           | **b3** | Added script **setup_prismasdwanspov.py** that configures based on data provided via CSV. Moved older scripts to folder **config_scripts_v1**  |
 |           | **b2** | Added support for static IP configuration |
 |           | **b1** | Initial Release |
