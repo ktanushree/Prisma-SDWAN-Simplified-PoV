@@ -546,8 +546,7 @@ SITE_TEMPLATE = {
         "policy_set_id": None,
         "security_policyset_id": None,
         "extended_tags": None,
-        "multicast_peer_group_id": None,
-        "app_acceleration_enabled": False
+        "multicast_peer_group_id": None
 }
 
 SWI_TEMPLATE = {
