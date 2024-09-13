@@ -3,7 +3,7 @@
 """
 Script to setup Prisma SDWAN Simplified PoV using a CSV
 Author: tkamath@paloaltonetworks.com
-Version: 1.0.0b4
+Version: 1.0.0b5
 """
 import prisma_sase
 import argparse
@@ -109,7 +109,7 @@ DEFAULT_VALUES = {
     #############################################################
     "lan_interface": "5",
     "num_vlans": "4",
-    "lan_ipprefix": "",
+    "lan_ip_prefix": "",
     "lan_dns": "",
     "lan_scope": "",
     #############################################################
@@ -203,7 +203,7 @@ PRIVATEWAN_DNS=["8.8.8.8", "8.8.4.4"]
 # LAN Interface
 #############################################################
 LAN_INTERFACE="5"
-LAN_IP_PREFIX=""
+LAN_IP_PREFIX="dhcp"
 LAN_SCOPE=""
 #############################################################
 # VLAN Config
@@ -265,6 +265,7 @@ def transpose_config(rowdata):
     global VLAN_CONFIG
     global CUSTOMER_NAME
     global NUM_VLANS
+    global ION_SOFTWARE_VERSION
 
     #
     # Extract values from passed CSV for mandatory form fields
@@ -272,6 +273,7 @@ def transpose_config(rowdata):
     CUSTOMER_NAME = rowdata["customer_name"]
     SITE_NAME = rowdata["site_name"]
     BRANCH_MODEL = rowdata["device_model"]
+    ION_SOFTWARE_VERSION = rowdata["software_version"]
 
     if rowdata["enable_ha"] in ["No", "no", "NO"]:
         HA = False
@@ -384,6 +386,7 @@ secstack_name_id = {}
 servicebinding_name_id = {}
 
 ION_MODEL_MAPPING = {
+    "1200": "ion 1200",
     "1200S": "ion 1200-s",
     "3200": "ion 3200",
     "5200": "ion 5200",
@@ -731,14 +734,15 @@ def create_dicts(sase_session):
             if item["default_policysetstack"]:
                 NWSTACKID=item["id"]
 
-                newname = "{}{}".format(CUSTOMER_NAME, item["name"])
-                item["name"] = newname
-                resp = sase_session.put.networkpolicysetstacks(networkpolicysetstack_id=item["id"], data=item)
-                if resp.cgx_status:
-                    print("\t\tDefault Network Stack updated to {}".format(item["name"]))
-                else:
-                    print("ERR: Could not update Default Network Stack Name")
-                    prisma_sase.jd_detailed(resp)
+                if CUSTOMER_NAME not in item["name"]:
+                    newname = "{}{}".format(CUSTOMER_NAME, item["name"])
+                    item["name"] = newname
+                    resp = sase_session.put.networkpolicysetstacks(networkpolicysetstack_id=item["id"], data=item)
+                    if resp.cgx_status:
+                        print("\t\tDefault Network Stack updated to {}".format(item["name"]))
+                    else:
+                        print("ERR: Could not update Default Network Stack Name")
+                        prisma_sase.jd_detailed(resp)
 
     else:
         print("ERR: Could not retrieve Network Policy Set Stacks")
@@ -755,14 +759,15 @@ def create_dicts(sase_session):
             if item["default_policysetstack"]:
                 QOSSTACKID=item["id"]
 
-                newname = "{}{}".format(CUSTOMER_NAME, item["name"])
-                item["name"] = newname
-                resp = sase_session.put.prioritypolicysetstacks(prioritypolicysetstack_id=item["id"], data=item)
-                if resp.cgx_status:
-                    print("\t\tDefault QoS Stack updated to {}".format(item["name"]))
-                else:
-                    print("ERR: Could not update Default QoS Stack Name")
-                    prisma_sase.jd_detailed(resp)
+                if CUSTOMER_NAME not in item["name"]:
+                    newname = "{}{}".format(CUSTOMER_NAME, item["name"])
+                    item["name"] = newname
+                    resp = sase_session.put.prioritypolicysetstacks(prioritypolicysetstack_id=item["id"], data=item)
+                    if resp.cgx_status:
+                        print("\t\tDefault QoS Stack updated to {}".format(item["name"]))
+                    else:
+                        print("ERR: Could not update Default QoS Stack Name")
+                        prisma_sase.jd_detailed(resp)
     else:
         print("ERR: Could not retrieve Priority Policy Set Stacks")
         prisma_sase.jd_detailed(resp)
@@ -778,14 +783,15 @@ def create_dicts(sase_session):
             if item["default_policysetstack"]:
                 NATSTACKID=item["id"]
 
-                newname = "{}{}".format(CUSTOMER_NAME, item["name"])
-                item["name"] = newname
-                resp = sase_session.put.natpolicysetstacks(natpolicysetstack_id=item["id"], data=item)
-                if resp.cgx_status:
-                    print("\t\tDefault NAT Stack updated to {}".format(item["name"]))
-                else:
-                    print("ERR: Could not update Default NAT Stack Name")
-                    prisma_sase.jd_detailed(resp)
+                if CUSTOMER_NAME not in item["name"]:
+                    newname = "{}{}".format(CUSTOMER_NAME, item["name"])
+                    item["name"] = newname
+                    resp = sase_session.put.natpolicysetstacks(natpolicysetstack_id=item["id"], data=item)
+                    if resp.cgx_status:
+                        print("\t\tDefault NAT Stack updated to {}".format(item["name"]))
+                    else:
+                        print("ERR: Could not update Default NAT Stack Name")
+                        prisma_sase.jd_detailed(resp)
 
     else:
         print("ERR: Could not retrieve NAT Policy Set Stacks")
@@ -1067,7 +1073,7 @@ def config_interfaces(sase_session, interface_mapping, interface_ipconfig, usedf
     #######################################################################
     # Create Subinterface
     #######################################################################
-    if ion_model in ["3200", "5200", "9200", "3102v", "3104v", "3108v"]:
+    if ion_model in ["1200", "3200", "5200", "9200", "3102v", "3104v", "3108v"]:
         #######################################################################
         # Get LAN Interface ID, set admin up
         #######################################################################
@@ -1078,16 +1084,20 @@ def config_interfaces(sase_session, interface_mapping, interface_ipconfig, usedf
         if resp.cgx_status:
             intf = resp.cgx_content
             intf["admin_up"] = True
-            if LAN_IP_PREFIX == "dhcp":
-                intf["ipv4_config"] = IPV4_TEMPLATE_DHCP
-            else:
-                intf["ipv4_config"]={
-                    "dhcp_config": None,
-                    "dns_v4_config": None,
-                    "routes": None,
-                    "static_config": {"address": LAN_IP_PREFIX},
-                    "type": "static"
-                }
+
+            if len(vlan_config) == 0:
+                if LAN_IP_PREFIX == "dhcp":
+                    intf["ipv4_config"] = IPV4_TEMPLATE_DHCP
+                elif LAN_IP_PREFIX is None:
+                    intf["ipv4_config"] = IPV4_TEMPLATE_DHCP
+                else:
+                    intf["ipv4_config"]={
+                        "dhcp_config": None,
+                        "dns_v4_config": None,
+                        "routes": None,
+                        "static_config": {"address": LAN_IP_PREFIX},
+                        "type": "static"
+                    }
 
             resp = sase_session.put.elementshells_interfaces(site_id=site_id,
                                                              elementshell_id=element_id,
@@ -1340,6 +1350,24 @@ def go():
         #############################################################################
         transpose_config(rowdata=row)
 
+        #############################################################################
+        # Validate software versions
+        #############################################################################
+        ALLOCATED_IMAGES = []
+        resp = sase_session.get.element_images()
+        if resp.cgx_status:
+            images = resp.cgx_content.get("items", None)
+            for image in images:
+                if image["state"] in ["release"]:
+                    ALLOCATED_IMAGES.append(image["version"])
+
+        if ION_SOFTWARE_VERSION not in ALLOCATED_IMAGES:
+            print("ERR: Software Version {} is not allocated to the tenant. Please pick a version from the list below:".format(ION_SOFTWARE_VERSION))
+            for item in ALLOCATED_IMAGES:
+                if item[0] != "5":
+                    print("\t{}".format(item))
+
+            sys.exit()
         ##############################################################################
         # WAN Networks
         ##############################################################################
@@ -1746,7 +1774,9 @@ def go():
         ##############################################################################
         interface_mapping_ion1[PRIMARY_INTERNET_INTERFACE] = PRIMARY_INTERNET_CIRCUITID
         usedfor_mapping_ion1[PRIMARY_INTERNET_INTERFACE]="public"
-        if PRIMARY_INTERNET_IP_PREFIX == "dhcp":
+        if PRIMARY_INTERNET_IP_PREFIX is None:
+            interface_ipconfig_ion1[PRIMARY_INTERNET_INTERFACE] = IPV4_TEMPLATE_DHCP
+        elif PRIMARY_INTERNET_IP_PREFIX == "dhcp":
             interface_ipconfig_ion1[PRIMARY_INTERNET_INTERFACE] = IPV4_TEMPLATE_DHCP
         else:
             config = {
@@ -1764,7 +1794,9 @@ def go():
             ##############################################################################
             interface_mapping_ion1[SECONDARY_INTERNET_INTERFACE] = SECONDARY_INTERNET_CIRCUITID
             usedfor_mapping_ion1[SECONDARY_INTERNET_INTERFACE] = "public"
-            if SECONDARY_INTERNET_IP_PREFIX == "dhcp":
+            if SECONDARY_INTERNET_IP_PREFIX is None:
+                interface_ipconfig_ion1[SECONDARY_INTERNET_INTERFACE] = IPV4_TEMPLATE_DHCP
+            elif SECONDARY_INTERNET_IP_PREFIX == "dhcp":
                 interface_ipconfig_ion1[SECONDARY_INTERNET_INTERFACE] = IPV4_TEMPLATE_DHCP
             else:
                 config = {
@@ -1781,7 +1813,9 @@ def go():
             ##############################################################################
             interface_mapping_ion2[SECONDARY_INTERNET_INTERFACE] = PRIMARY_INTERNET_CIRCUITID
             usedfor_mapping_ion2[SECONDARY_INTERNET_INTERFACE] = "public"
-            if PRIMARY_INTERNET_IP_PREFIX == "dhcp":
+            if PRIMARY_INTERNET_IP_PREFIX is None:
+                interface_ipconfig_ion2[SECONDARY_INTERNET_INTERFACE] = IPV4_TEMPLATE_DHCP
+            elif PRIMARY_INTERNET_IP_PREFIX == "dhcp":
                 interface_ipconfig_ion2[SECONDARY_INTERNET_INTERFACE] = IPV4_TEMPLATE_DHCP
             else:
                 config = {
@@ -1798,7 +1832,9 @@ def go():
             ##############################################################################
             interface_mapping_ion2[PRIMARY_INTERNET_INTERFACE] = SECONDARY_INTERNET_CIRCUITID
             usedfor_mapping_ion2[PRIMARY_INTERNET_INTERFACE] = "public"
-            if SECONDARY_INTERNET_IP_PREFIX == "dhcp":
+            if SECONDARY_INTERNET_IP_PREFIX is None:
+                interface_ipconfig_ion2[PRIMARY_INTERNET_INTERFACE] = IPV4_TEMPLATE_DHCP
+            elif SECONDARY_INTERNET_IP_PREFIX == "dhcp":
                 interface_ipconfig_ion2[PRIMARY_INTERNET_INTERFACE] = IPV4_TEMPLATE_DHCP
             else:
                 config = {
@@ -1816,7 +1852,9 @@ def go():
             ##############################################################################
             interface_mapping_ion1[PRIVATEWAN_INTERFACE] = PRIVATEWAN_CIRCUITID
             usedfor_mapping_ion1[PRIVATEWAN_INTERFACE] = "private"
-            if PRIVATEWAN_IP_PREFIX == "dhcp":
+            if PRIVATEWAN_IP_PREFIX is None:
+                interface_ipconfig_ion1[PRIVATEWAN_INTERFACE] = IPV4_TEMPLATE_DHCP
+            elif PRIVATEWAN_IP_PREFIX == "dhcp":
                 interface_ipconfig_ion1[PRIVATEWAN_INTERFACE] = IPV4_TEMPLATE_DHCP
             else:
                 config = {
@@ -1833,7 +1871,9 @@ def go():
             ##############################################################################
             interface_mapping_ion2[PRIVATEWAN_INTERFACE] = PRIMARY_INTERNET_CIRCUITID
             usedfor_mapping_ion2[PRIVATEWAN_INTERFACE] = "public"
-            if PRIMARY_INTERNET_IP_PREFIX == "dhcp":
+            if PRIMARY_INTERNET_IP_PREFIX is None:
+                interface_ipconfig_ion2[PRIVATEWAN_INTERFACE] = IPV4_TEMPLATE_DHCP
+            elif PRIMARY_INTERNET_IP_PREFIX == "dhcp":
                 interface_ipconfig_ion2[PRIVATEWAN_INTERFACE] = IPV4_TEMPLATE_DHCP
             else:
                 config = {
@@ -1850,7 +1890,9 @@ def go():
             ##############################################################################
             interface_mapping_ion2[PRIMARY_INTERNET_INTERFACE] = PRIVATEWAN_CIRCUITID
             usedfor_mapping_ion2[PRIMARY_INTERNET_INTERFACE] = "private"
-            if PRIVATEWAN_IP_PREFIX == "dhcp":
+            if PRIVATEWAN_IP_PREFIX is None:
+                interface_ipconfig_ion2[PRIMARY_INTERNET_INTERFACE] = IPV4_TEMPLATE_DHCP
+            elif PRIVATEWAN_IP_PREFIX == "dhcp":
                 interface_ipconfig_ion2[PRIMARY_INTERNET_INTERFACE] = IPV4_TEMPLATE_DHCP
             else:
                 config = {
