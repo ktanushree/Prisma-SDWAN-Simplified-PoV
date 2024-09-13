@@ -42,7 +42,7 @@ CSV_HEADER_MANDATORY=["customer_name","device_model","enable_ha",
                       "secondary_internet_interface","secondary_internet_ip_prefix","secondary_internet_default_gw","secondary_internet_dns",
                       "private_wan_circuitname","private_wan_provider","private_wan_category",
                       "private_wan_interface","private_wan_ip_prefix","private_wan_default_gw","private_wan_dns",
-                      "lan_interface","num_vlans","lan_ip_prefix","lan_default_gateway","lan_dns","lan_scope"]
+                      "lan_interface","num_vlans","lan_ip_prefix","lan_dns","lan_scope"]
 
 CSV_HEADER_VLAN=["vlan_id","vlan_name","vlan_ip_prefix","vlan_scope", "vlan_used_for"]
 
