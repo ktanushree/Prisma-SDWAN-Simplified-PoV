@@ -1462,7 +1462,7 @@ def go():
                 print("Public Circuit Label: {} already exists".format(category))
 
         for category in PRIVATE_CATEGORY:
-            if category in configured_categories_public:
+            if category not in configured_categories_public:
                 if "private-10" in circuitname_label_map.keys():
                     circuitname_label_map["private-11"] = category
                 else:
