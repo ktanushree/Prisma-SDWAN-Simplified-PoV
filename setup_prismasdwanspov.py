@@ -110,7 +110,6 @@ DEFAULT_VALUES = {
     "lan_interface": "5",
     "num_vlans": "4",
     "lan_ipprefix": "",
-    "lan_default_gateway": "",
     "lan_dns": "",
     "lan_scope": "",
     #############################################################
