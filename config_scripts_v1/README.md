@@ -1,4 +1,4 @@
-## Simplified PoV Configuration Scripts
+## Simplified PoV Configuration Scripts : config_scripts_v1
 These are scripts for configuring Prisma SDWAN branch sites and policies on tenants spun up for Simplified PoV.
 
 The script will refer to the [prismasase_settings.py](https://bitbucket.paloaltonetworks.local/projects/CGTME/repos/spov/browse/prismasase_settings.py.example) file for details on how the SDWAN brnach must be configured.
@@ -86,10 +86,3 @@ Config:
 (base) TanushreeMacbook:spov tkamath$ 
 
 ```
-
-
-## Version
-| Version | Build | Changes |
-| ------- | ----- | ------- |
-| **1.0.0** | **b2** | Added support for static IP configuration |
-|           | **b1** | Initial Release |
