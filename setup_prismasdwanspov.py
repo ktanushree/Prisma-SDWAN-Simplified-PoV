@@ -3,7 +3,7 @@
 """
 Script to setup Prisma SDWAN Simplified PoV using a CSV
 Author: tkamath@paloaltonetworks.com
-Version: 1.0.0b5
+Version: 1.0.0b6
 """
 import prisma_sase
 import argparse
@@ -1544,7 +1544,7 @@ def go():
                 resp = sase_session.post.securityzones(data=zone_data)
                 if resp.cgx_status:
                     print("\t{} created".format(zone))
-                    zone_name_id[zone] = resp.cgx_content.get("id", None)
+                    zone_name_id[str.lower(zone)] = resp.cgx_content.get("id", None)
 
                 else:
                     print("ERR: Could not create zone {}".format(zone))
