@@ -100,7 +100,8 @@ Config:
 ## Version
 | Version | Build | Changes |
 | ------- | ----- | ------- |
-| **1.0.0** | **b5** | Bug fixes. Validate ION software version |
+| **1.0.0** | **b6** | Bug fix for zone binding error |
+|           | **b5** | Bug fixes. Validate ION software version |
 |           | **b4** | Bug fixes. Added enhancement to handle bypass pair ports. See Important Note for details |
 |           | **b3** | Added script **setup_prismasdwanspov.py** that configures based on data provided via CSV. Moved older scripts to folder **config_scripts_v1**  |
 |           | **b2** | Added support for static IP configuration |
