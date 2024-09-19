@@ -3,7 +3,7 @@
 """
 Script to setup Prisma SDWAN Simplified PoV using a CSV
 Author: tkamath@paloaltonetworks.com
-Version: 1.0.0b6
+Version: 1.0.0b7
 """
 import prisma_sase
 import argparse
@@ -1071,6 +1071,25 @@ def config_interfaces(sase_session, interface_mapping, interface_ipconfig, usedf
     #######################################################################
     vlan_config = interface_ipconfig[LAN_INTERFACE]
     #######################################################################
+    # Admin up Controller Interface
+    #######################################################################
+    if ion_model in ["3102v", "3104v", "3108v"]:
+        for intf in interfaces:
+            if "controller" in intf["name"]:
+                intf["admin_up"] = True
+                intf["ipv4_config"] = IPV4_TEMPLATE_DHCP
+
+                resp = sase_session.put.elementshells_interfaces(site_id=site_id,
+                                                                 elementshell_id=element_id,
+                                                                 interface_id=intf["id"],
+                                                                 data=intf)
+                if resp.cgx_status:
+                    print("\t\tController configured with DHCP & Admin up")
+                else:
+                    print("ERR: Could not update controller port")
+                    prisma_sase.jd_detailed(resp)
+
+    #######################################################################
     # Create Subinterface
     #######################################################################
     if ion_model in ["1200", "3200", "5200", "9200", "3102v", "3104v", "3108v"]:
@@ -1263,6 +1282,424 @@ def get_ha_interface_id(sase_session, site_id, elemshell_id):
     return ha_intf_id
 
 
+def configure_byos(sase_session, dc_site_id, dc_type):
+
+    #
+    # Create public & private SWI
+    # Create two shells for 3104
+    # Configure Interface:
+    # port 1: dhcp, peer with nw
+    # port 2: dhcp, internet
+    # port 3: dhcp, private
+    #
+    ##############################################################################
+    # Create SWIs - Public Circuits
+    ##############################################################################
+    print("SPoV DC")
+    DC_INTERNET_CIRCUITID = None
+    priint_data = copy.deepcopy(SWI_TEMPLATE)
+    priint_data["name"] = "DC1 ISP Circuit"
+    priint_data["type"] = "publicwan"
+    priint_data["network_id"] = wannwpub_name_id[PRIMARY_INTERNET_PROVIDER]
+    priint_data["label_id"] = label_name_id[PRIMARY_INTERNET_CATEGORY]
+    priint_data["lqm_config"] = None
+    priint_data["link_bw_down"] = 1000
+    priint_data["link_bw_up"] = 1000
+
+
+    resp = sase_session.post.waninterfaces(site_id=dc_site_id, data=priint_data)
+    if resp.cgx_status:
+        print("\tPublic Circuit: DC1 ISP Circuit created")
+        DC_INTERNET_CIRCUITID = resp.cgx_content.get("id", None)
+
+    else:
+        print("ERR: Could not create Public Circuit: DC1 ISP Circuit")
+        prisma_sase.jd_detailed(resp)
+
+    ##############################################################################
+    # Create SWIs - Private Circuits
+    ##############################################################################
+    DC_MPLS_CIRCUITID = None
+    priint_data = copy.deepcopy(SWI_TEMPLATE)
+    priint_data["name"] = "DC1 MPLS Circuit"
+    priint_data["type"] = "privatewan"
+    priint_data["network_id"] = wannwpri_name_id[PRIVATEWAN_PROVIDER]
+    priint_data["label_id"] = label_name_id[PRIVATEWAN_CATEGORY]
+    priint_data["lqm_config"] = None
+    priint_data["link_bw_down"] = 100
+    priint_data["link_bw_up"] = 100
+
+    resp = sase_session.post.waninterfaces(site_id=dc_site_id, data=priint_data)
+    if resp.cgx_status:
+        print("\tPrivate Circuit: DC1 MPLS Circuit created")
+        DC_MPLS_CIRCUITID = resp.cgx_content.get("id", None)
+
+    else:
+        print("ERR: Could not create Private Circuit: DC1 MPLS Circuit")
+        prisma_sase.jd_detailed(resp)
+
+    ##############################################################################
+    # Get Hub Cluster ID
+    ##############################################################################
+    hubcluster_id=None
+    resp = sase_session.get.hubclusters(site_id=dc_site_id)
+    if resp.cgx_status:
+        hubclusters = resp.cgx_content.get("items", None)
+        for cluster in hubclusters:
+            if cluster["default_cluster"]:
+                hubcluster_id = cluster["id"]
+    else:
+        print("ERR: Could not retrieve hub clusters for SPOV DC")
+        prisma_sase.jd_detailed(resp)
+        sys.exit()
+    ##############################################################################
+    # Create Element Shell for DC ION 1
+    ##############################################################################
+    shell_data = {
+        "tenant_id": sase_session.tenant_id,
+        "site_id": dc_site_id,
+        "software_version": ION_SOFTWARE_VERSION,
+        "model_name": "ion 3104v",
+        "name": "DC-ION-1",
+        "role": "HUB",
+        "cluster_id": hubcluster_id
+    }
+    resp = sase_session.post.elementshells(site_id=dc_site_id, data=shell_data)
+    if resp.cgx_status:
+        print("\tElement Shell created for DC-ION-1")
+        dc_elem1_id = resp.cgx_content.get("id", None)
+
+        resp = sase_session.get.elementshells_interfaces(site_id=dc_site_id, elementshell_id=dc_elem1_id)
+        if resp.cgx_status:
+            intflist = resp.cgx_content.get("items", None)
+            for intf in intflist:
+                if "controller" in intf["name"]:
+                    intf["admin_up"] = True
+                    intf["ipv4_config"] = IPV4_TEMPLATE_DHCP
+
+                    resp = sase_session.put.elementshells_interfaces(site_id=dc_site_id,
+                                                                     elementshell_id=dc_elem1_id,
+                                                                     interface_id=intf["id"],
+                                                                     data=intf)
+                    if resp.cgx_status:
+                        print("\tController port on DC-ION-1 configured")
+                    else:
+                        print("ERR: Could not configure controller port on DC-ION-1")
+                        prisma_sase.jd_detailed(resp)
+
+                elif intf["name"] == "1":
+                    intf["admin_up"] = True
+                    intf["ipv4_config"] = IPV4_TEMPLATE_DHCP
+                    intf["used_for"] = "private"
+                    resp = sase_session.put.elementshells_interfaces(site_id=dc_site_id,
+                                                                     elementshell_id=dc_elem1_id,
+                                                                     interface_id=intf["id"],
+                                                                     data=intf)
+                    if resp.cgx_status:
+                        print("\tPort 1 on DC-ION-1 configured")
+                    else:
+                        print("ERR: Could not configure port 1 on DC-ION-1")
+                        prisma_sase.jd_detailed(resp)
+
+                elif intf["name"] == "2":
+                    intf["admin_up"] = True
+                    intf["ipv4_config"] = IPV4_TEMPLATE_DHCP
+                    intf["used_for"] = "public"
+                    intf["site_wan_interface_ids"] = [DC_INTERNET_CIRCUITID]
+                    resp = sase_session.put.elementshells_interfaces(site_id=dc_site_id,
+                                                                     elementshell_id=dc_elem1_id,
+                                                                     interface_id=intf["id"],
+                                                                     data=intf)
+                    if resp.cgx_status:
+                        print("\tPort 2 on DC-ION-1 configured")
+                    else:
+                        print("ERR: Could not configure port 2 on DC-ION-1")
+                        prisma_sase.jd_detailed(resp)
+
+                elif intf["name"] == "3":
+                    intf["admin_up"] = True
+                    intf["ipv4_config"] = IPV4_TEMPLATE_DHCP
+                    intf["used_for"] = "private"
+                    intf["site_wan_interface_ids"] = [DC_MPLS_CIRCUITID]
+                    resp = sase_session.put.elementshells_interfaces(site_id=dc_site_id,
+                                                                     elementshell_id=dc_elem1_id,
+                                                                     interface_id=intf["id"],
+                                                                     data=intf)
+                    if resp.cgx_status:
+                        print("\tPort 3 on DC-ION-1 configured")
+                    else:
+                        print("ERR: Could not configure port 3 on DC-ION-1")
+                        prisma_sase.jd_detailed(resp)
+
+    else:
+        print("ERR: Could not create element shell for DC ION 1")
+        prisma_sase.jd_detailed(resp)
+
+    ##############################################################################
+    # Create Element Shell for DC ION 1
+    ##############################################################################
+    shell_data = {
+        "tenant_id": sase_session.tenant_id,
+        "site_id": dc_site_id,
+        "software_version": ION_SOFTWARE_VERSION,
+        "model_name": "ion 3104v",
+        "name": "DC-ION-2",
+        "role": "HUB",
+        "cluster_id": hubcluster_id
+    }
+    resp = sase_session.post.elementshells(site_id=dc_site_id, data=shell_data)
+    if resp.cgx_status:
+        print("\tElement Shell created for DC-ION-2")
+        dc_elem2_id = resp.cgx_content.get("id", None)
+
+        resp = sase_session.get.elementshells_interfaces(site_id=dc_site_id, elementshell_id=dc_elem2_id)
+        if resp.cgx_status:
+            intflist = resp.cgx_content.get("items", None)
+            for intf in intflist:
+                if "controller" in intf["name"]:
+                    intf["admin_up"] = True
+                    intf["ipv4_config"] = IPV4_TEMPLATE_DHCP
+
+                    resp = sase_session.put.elementshells_interfaces(site_id=dc_site_id,
+                                                                     elementshell_id=dc_elem2_id,
+                                                                     interface_id=intf["id"],
+                                                                     data=intf)
+                    if resp.cgx_status:
+                        print("\tController port on DC-ION-2 configured")
+                    else:
+                        print("ERR: Could not configure controller port on DC-ION-2")
+                        prisma_sase.jd_detailed(resp)
+
+                elif intf["name"] == "1":
+                    intf["admin_up"] = True
+                    intf["ipv4_config"] = IPV4_TEMPLATE_DHCP
+                    intf["used_for"] = "private"
+                    resp = sase_session.put.elementshells_interfaces(site_id=dc_site_id,
+                                                                     elementshell_id=dc_elem2_id,
+                                                                     interface_id=intf["id"],
+                                                                     data=intf)
+                    if resp.cgx_status:
+                        print("\tPort 1 on DC-ION-2 configured")
+                    else:
+                        print("ERR: Could not configure port 1 on DC-ION-2")
+                        prisma_sase.jd_detailed(resp)
+
+                elif intf["name"] == "2":
+                    intf["admin_up"] = True
+                    intf["ipv4_config"] = IPV4_TEMPLATE_DHCP
+                    intf["used_for"] = "public"
+                    intf["site_wan_interface_ids"] = [DC_INTERNET_CIRCUITID]
+                    resp = sase_session.put.elementshells_interfaces(site_id=dc_site_id,
+                                                                     elementshell_id=dc_elem2_id,
+                                                                     interface_id=intf["id"],
+                                                                     data=intf)
+                    if resp.cgx_status:
+                        print("\tPort 2 on DC-ION-2 configured")
+                    else:
+                        print("ERR: Could not configure port 2 on DC-ION-2")
+                        prisma_sase.jd_detailed(resp)
+
+                elif intf["name"] == "3":
+                    intf["admin_up"] = True
+                    intf["ipv4_config"] = IPV4_TEMPLATE_DHCP
+                    intf["used_for"] = "private"
+                    intf["site_wan_interface_ids"] = [DC_MPLS_CIRCUITID]
+                    resp = sase_session.put.elementshells_interfaces(site_id=dc_site_id,
+                                                                     elementshell_id=dc_elem2_id,
+                                                                     interface_id=intf["id"],
+                                                                     data=intf)
+                    if resp.cgx_status:
+                        print("\tPort 3 on DC-ION-2 configured")
+                    else:
+                        print("ERR: Could not configure port 3 on DC-ION-2")
+                        prisma_sase.jd_detailed(resp)
+
+    else:
+        print("ERR: Could not create element shell for DC ION 2")
+        prisma_sase.jd_detailed(resp)
+
+    ##############################################################################
+    # Create DC2
+    ##############################################################################
+    if dc_type == "DC2":
+        dc_data = {
+            "name": "SPoV DC2 test",
+            "description": "Auto-created DC site for Simplified PoV",
+            "address": {
+                "street": "",
+                "state": "",
+                "post_code": "",
+                "city": "San Francisco",
+                "country": "United States",
+                "street2": None
+            },
+            "location": {
+                "latitude": 37.7792376,
+                "longitude": -122.419359,
+                "description": None
+            },
+            "tags": [],
+            "element_cluster_role": "HUB",
+            "admin_state": "disabled",
+            "policy_set_id": None,
+            "security_policyset_id": None,
+            "network_policysetstack_id": None,
+            "priority_policysetstack_id": None,
+            "security_policysetstack_id": None,
+            "nat_policysetstack_id": None,
+            "service_binding": None,
+            "extended_tags": None,
+            "multicast_peer_group_id": None,
+            "perfmgmt_policysetstack_id": None
+        }
+        resp = sase_session.post.sites(data=dc_data)
+        if resp.cgx_status:
+            print("SPoV DC2 created")
+            dc2_site_id = resp.cgx_content.get("id", None)
+
+            ##############################################################################
+            # Create SWIs - Public Circuits
+            ##############################################################################
+            DC2_INTERNET_CIRCUITID = None
+            priint_data = copy.deepcopy(SWI_TEMPLATE)
+            priint_data["name"] = "DC2 ISP Circuit"
+            priint_data["type"] = "publicwan"
+            priint_data["network_id"] = wannwpub_name_id[PRIMARY_INTERNET_PROVIDER]
+            priint_data["label_id"] = label_name_id[PRIMARY_INTERNET_CATEGORY]
+            priint_data["lqm_config"] = None
+            priint_data["link_bw_down"] = 1000
+            priint_data["link_bw_up"] = 1000
+
+            resp = sase_session.post.waninterfaces(site_id=dc2_site_id, data=priint_data)
+            if resp.cgx_status:
+                print("\tPublic Circuit: DC2 ISP Circuit created")
+                DC2_INTERNET_CIRCUITID = resp.cgx_content.get("id", None)
+
+            else:
+                print("ERR: Could not create Public Circuit: DC2 ISP Circuit")
+                prisma_sase.jd_detailed(resp)
+
+            ##############################################################################
+            # Create SWIs - Private Circuits
+            ##############################################################################
+            DC2_MPLS_CIRCUITID = None
+            priint_data = copy.deepcopy(SWI_TEMPLATE)
+            priint_data["name"] = "DC2 MPLS Circuit"
+            priint_data["type"] = "privatewan"
+            priint_data["network_id"] = wannwpri_name_id[PRIVATEWAN_PROVIDER]
+            priint_data["label_id"] = label_name_id[PRIVATEWAN_CATEGORY]
+            priint_data["lqm_config"] = None
+            priint_data["link_bw_down"] = 100
+            priint_data["link_bw_up"] = 100
+
+            resp = sase_session.post.waninterfaces(site_id=dc2_site_id, data=priint_data)
+            if resp.cgx_status:
+                print("\tPrivate Circuit: DC2 MPLS Circuit created")
+                DC2_MPLS_CIRCUITID = resp.cgx_content.get("id", None)
+
+            else:
+                print("ERR: Could not create Private Circuit: DC2 MPLS Circuit")
+                prisma_sase.jd_detailed(resp)
+
+            ##############################################################################
+            # Get Hub Cluster ID
+            ##############################################################################
+            hubcluster_id = None
+            resp = sase_session.get.hubclusters(site_id=dc2_site_id)
+            if resp.cgx_status:
+                hubclusters = resp.cgx_content.get("items", None)
+                for cluster in hubclusters:
+                    if cluster["default_cluster"]:
+                        hubcluster_id = cluster["id"]
+            else:
+                print("ERR: Could not retrieve hub clusters for SPOV DC2")
+                prisma_sase.jd_detailed(resp)
+                sys.exit()
+            ##############################################################################
+            # Create Element Shell for DC2 ION 1
+            ##############################################################################
+            shell_data = {
+                "tenant_id": sase_session.tenant_id,
+                "site_id": dc2_site_id,
+                "software_version": ION_SOFTWARE_VERSION,
+                "model_name": "ion 3108v",
+                "name": "DC2-ION-1",
+                "role": "HUB",
+                "cluster_id": hubcluster_id
+            }
+            resp = sase_session.post.elementshells(site_id=dc2_site_id, data=shell_data)
+            if resp.cgx_status:
+                print("\tElement Shell created for DC2-ION-1")
+                dc2_elem1_id = resp.cgx_content.get("id", None)
+
+                resp = sase_session.get.elementshells_interfaces(site_id=dc2_site_id, elementshell_id=dc2_elem1_id)
+                if resp.cgx_status:
+                    intflist = resp.cgx_content.get("items", None)
+                    for intf in intflist:
+                        if "controller" in intf["name"]:
+                            intf["admin_up"] = True
+                            intf["ipv4_config"] = IPV4_TEMPLATE_DHCP
+
+                            resp = sase_session.put.elementshells_interfaces(site_id=dc2_site_id,
+                                                                             elementshell_id=dc2_elem1_id,
+                                                                             interface_id=intf["id"],
+                                                                             data=intf)
+                            if resp.cgx_status:
+                                print("\tController port on DC2-ION-1 configured")
+                            else:
+                                print("ERR: Could not configure controller port on DC2-ION-1")
+                                prisma_sase.jd_detailed(resp)
+
+                        elif intf["name"] == "1":
+                            intf["admin_up"] = True
+                            intf["ipv4_config"] = IPV4_TEMPLATE_DHCP
+                            intf["used_for"] = "private"
+                            resp = sase_session.put.elementshells_interfaces(site_id=dc2_site_id,
+                                                                             elementshell_id=dc2_elem1_id,
+                                                                             interface_id=intf["id"],
+                                                                             data=intf)
+                            if resp.cgx_status:
+                                print("\tPort 1 on DC2-ION-1 configured")
+                            else:
+                                print("ERR: Could not configure port 1 on DC2-ION-1")
+                                prisma_sase.jd_detailed(resp)
+
+                        elif intf["name"] == "2":
+                            intf["admin_up"] = True
+                            intf["ipv4_config"] = IPV4_TEMPLATE_DHCP
+                            intf["used_for"] = "public"
+                            intf["site_wan_interface_ids"] = [DC2_INTERNET_CIRCUITID]
+                            resp = sase_session.put.elementshells_interfaces(site_id=dc2_site_id,
+                                                                             elementshell_id=dc2_elem1_id,
+                                                                             interface_id=intf["id"],
+                                                                             data=intf)
+                            if resp.cgx_status:
+                                print("\tPort 2 on DC2-ION-1 configured")
+                            else:
+                                print("ERR: Could not configure port 2 on DC2-ION-1")
+                                prisma_sase.jd_detailed(resp)
+
+                        elif intf["name"] == "3":
+                            intf["admin_up"] = True
+                            intf["ipv4_config"] = IPV4_TEMPLATE_DHCP
+                            intf["used_for"] = "private"
+                            intf["site_wan_interface_ids"] = [DC2_MPLS_CIRCUITID]
+                            resp = sase_session.put.elementshells_interfaces(site_id=dc2_site_id,
+                                                                             elementshell_id=dc2_elem1_id,
+                                                                             interface_id=intf["id"],
+                                                                             data=intf)
+                            if resp.cgx_status:
+                                print("\tPort 3 on DC2-ION-1 configured")
+                            else:
+                                print("ERR: Could not configure port 3 on DC2-ION-1")
+                                prisma_sase.jd_detailed(resp)
+
+            else:
+                print("ERR: Could not create element shell for DC2 ION 1")
+                prisma_sase.jd_detailed(resp)
+
+    return
+
 def go():
     #############################################################################
     # Global Variables
@@ -1278,12 +1715,19 @@ def go():
                               default="https://api.sase.paloaltonetworks.com")
     config_group.add_argument("--filename", "-F", help="File containing configuration detail. Provide the full path",
                               default=None)
+    config_group.add_argument("--byos", "-B", help="Switch to enable BYOS configurations",
+                             action='store_true',
+                             default=False)
+    config_group.add_argument("--dctype", "-D", help="Allowed values: DC1 or DC2",
+                              default="DC1")
     #############################################################################
     # Parse arguments
     #############################################################################
     args = vars(parser.parse_args())
     controller=args["controller"]
     filename=args["filename"]
+    byos=args["byos"]
+    dctype=args["dctype"]
 
     #############################################################################
     # Validate arguments
@@ -1299,6 +1743,9 @@ def go():
             print("ERR: Unsupported file type. Please provide a CSV")
             sys.exit()
 
+    if dctype not in ["DC1", "DC2"]:
+        print("ERR: Invalid dctype: {}. Please select DC1 or DC2".format(dctype))
+        sys.exit()
     ##############################################################################
     # Instantiate SDK & Login
     ##############################################################################
@@ -1490,7 +1937,7 @@ def go():
                 print("Public Circuit Label: {} already exists".format(category))
 
         for category in PRIVATE_CATEGORY:
-            if category not in configured_categories_public:
+            if category not in configured_categories_private:
                 if "private-10" in circuitname_label_map.keys():
                     circuitname_label_map["private-11"] = category
                 else:
@@ -2252,13 +2699,13 @@ def go():
     #
     ##############################################################################
     DC_SITE_ID=None
-    if "SPoV DC" in site_name_id.keys():
+    if "SPoV DC test" in site_name_id.keys():
         print("DC Site SPoV DC already exists")
-        DC_SITE_ID = site_name_id["SPoV DC"]
+        DC_SITE_ID = site_name_id["SPoV DC test"]
     else:
         print("Creating DC Site + Service Binding")
         dc_data = {
-            "name": "SPoV DC",
+            "name": "SPoV DC test",
             "description": "Auto-created DC site for Simplified PoV",
             "address": {
                 "street": "",
@@ -2620,6 +3067,11 @@ def go():
         print("ERR: Could not retrieve network stack")
         prisma_sase.jd_detailed(resp)
 
+    ##############################################################################
+    # BYOS Configuration
+    ##############################################################################
+    if byos:
+        configure_byos(sase_session=sase_session, dc_site_id=DC_SITE_ID, dc_type=dctype)
     ##############################################################################
     # End of script
     ##############################################################################

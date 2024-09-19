@@ -100,7 +100,8 @@ Config:
 ## Version
 | Version | Build | Changes |
 | ------- | ----- | ------- |
-| **1.0.0** | **b6** | Bug fix for zone binding error |
+| **1.0.0** | **b7** | Bug fixes, Support for BYOS switch, cleanup updated for BYOS |
+|           | **b6** | Bug fix for zone binding error |
 |           | **b5** | Bug fixes. Validate ION software version |
 |           | **b4** | Bug fixes. Added enhancement to handle bypass pair ports. See Important Note for details |
 |           | **b3** | Added script **setup_prismasdwanspov.py** that configures based on data provided via CSV. Moved older scripts to folder **config_scripts_v1**  |
