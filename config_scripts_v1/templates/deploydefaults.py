@@ -3,7 +3,6 @@
 """
 Script to setup Prisma SDWAN Simplified PoV
 Author: tkamath@paloaltonetworks.com
-Version: 1.0.0b7
 """
 import prisma_sase
 import argparse
