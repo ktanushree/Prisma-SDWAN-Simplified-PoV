@@ -3,7 +3,7 @@
 """
 Script to setup Prisma SDWAN Simplified PoV using a CSV
 Author: tkamath@paloaltonetworks.com
-Version: 1.0.0b7
+Version: 1.0.0b8
 """
 import prisma_sase
 import argparse
@@ -1103,6 +1103,7 @@ def config_interfaces(sase_session, interface_mapping, interface_ipconfig, usedf
         if resp.cgx_status:
             intf = resp.cgx_content
             intf["admin_up"] = True
+            intf["used_for"] = "lan"
 
             if len(vlan_config) == 0:
                 if LAN_IP_PREFIX == "dhcp":
@@ -1540,7 +1541,7 @@ def configure_byos(sase_session, dc_site_id, dc_type):
             },
             "tags": [],
             "element_cluster_role": "HUB",
-            "admin_state": "disabled",
+            "admin_state": "active",
             "policy_set_id": None,
             "security_policyset_id": None,
             "network_policysetstack_id": None,
@@ -2722,7 +2723,7 @@ def go():
             },
             "tags": [],
             "element_cluster_role": "HUB",
-            "admin_state": "disabled",
+            "admin_state": "active",
             "policy_set_id": None,
             "security_policyset_id": None,
             "network_policysetstack_id": None,
