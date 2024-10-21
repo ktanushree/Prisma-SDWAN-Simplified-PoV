@@ -3,7 +3,7 @@
 """
 Script to setup Prisma SDWAN Simplified PoV
 Author: tkamath@paloaltonetworks.com
-Version: 1.0.0b8
+Version: 1.0.0b9
 """
 import prisma_sase
 import argparse
@@ -357,6 +357,22 @@ def go():
                             prisma_sase.jd_detailed(resp)
             else:
                 print("ERR: Could not get serviceendpoints")
+                prisma_sase.jd_detailed(resp)
+            ##############################################################################
+            # Disable DC Site
+            ##############################################################################
+            resp = sase_session.get.sites(site_id=dcsite_id)
+            if resp.cgx_status:
+                siteobj = resp.cgx_content
+                siteobj["admin_state"] = "disabled"
+                resp = sase_session.put.sites(site_id=dcsite_id, data=siteobj)
+                if resp.cgx_status:
+                    print("Site {} Disabled".format(dcsite))
+                else:
+                    print("ERR: Could not disable Site {}".format(dcsite))
+                    prisma_sase.jd_detailed(resp)
+            else:
+                print("ERR: Could not retrieve site {}".format(dcsite))
                 prisma_sase.jd_detailed(resp)
             ##############################################################################
             # Delete DC Site

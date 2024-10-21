@@ -3,7 +3,7 @@
 """
 Script to setup Prisma SDWAN Simplified PoV using a CSV
 Author: tkamath@paloaltonetworks.com
-Version: 1.0.0b8
+Version: 1.0.0b9
 """
 import prisma_sase
 import argparse
@@ -262,6 +262,7 @@ def transpose_config(rowdata):
     global LAN_INTERFACE
     global LAN_IP_PREFIX
     global LAN_SCOPE
+    global LAN_DNS
     global VLAN_CONFIG
     global CUSTOMER_NAME
     global NUM_VLANS
@@ -300,7 +301,12 @@ def transpose_config(rowdata):
         PRIMARY_INTERNET_INTERFACE = rowdata["primary_internet_interface"]
         PRIMARY_INTERNET_IP_PREFIX = rowdata["primary_internet_ip_prefix"]
         PRIMARY_INTERNET_GW = rowdata["primary_internet_default_gw"]
-        PRIMARY_INTERNET_DNS = rowdata["primary_internet_dns"]
+        pri_dns_entries = rowdata["primary_internet_dns"]
+        PRIMARY_INTERNET_DNS=[]
+        if pri_dns_entries is not None:
+            tmp = pri_dns_entries.split(",")
+            for item in tmp:
+                PRIMARY_INTERNET_DNS.append(item)
         #############################################################
         # Secondary Internet
         #############################################################
@@ -311,6 +317,12 @@ def transpose_config(rowdata):
         SECONDARY_INTERNET_IP_PREFIX = rowdata["secondary_internet_ip_prefix"]
         SECONDARY_INTERNET_GW = rowdata["secondary_internet_default_gw"]
         SECONDARY_INTERNET_DNS = rowdata["secondary_internet_dns"]
+        sec_dns_entries = rowdata["secondary_internet_dns"]
+        SECONDARY_INTERNET_DNS = []
+        if sec_dns_entries is not None:
+            tmp = sec_dns_entries.split(",")
+            for item in tmp:
+                SECONDARY_INTERNET_DNS.append(item)
         #############################################################
         # Private WAN
         #############################################################
@@ -327,6 +339,7 @@ def transpose_config(rowdata):
         LAN_INTERFACE = rowdata["lan_interface"]
         LAN_IP_PREFIX = rowdata["lan_ip_prefix"]
         LAN_SCOPE = rowdata["lan_scope"]
+        LAN_DNS = rowdata["lan_dns"]
         #############################################################
         # VLAN Config
         #############################################################
@@ -341,11 +354,11 @@ def transpose_config(rowdata):
                 usedforkey = "vlan_used_for_{}".format(configuredvlans)
                 scopekey = "vlan_scope_{}".format(configuredvlans)
 
-                if (vlankey not in rowdata.columns) or \
-                        (namekey not in rowdata.columns) or \
-                        (ipprefixkey not in rowdata.columns) or \
-                        (usedforkey not in rowdata.columns) or \
-                        (scopekey not in rowdata.columns):
+                if (vlankey not in rowdata.keys()) or \
+                        (namekey not in rowdata.keys()) or \
+                        (ipprefixkey not in rowdata.keys()) or \
+                        (usedforkey not in rowdata.keys()) or \
+                        (scopekey not in rowdata.keys()):
                     print("WARN: Mismatch in number of VLANs to be configured and VLAN config provided. Some configuration will be missing!!!")
 
                 vlanconf = {
@@ -1103,9 +1116,11 @@ def config_interfaces(sase_session, interface_mapping, interface_ipconfig, usedf
         if resp.cgx_status:
             intf = resp.cgx_content
             intf["admin_up"] = True
-            intf["used_for"] = "lan"
+            if LAN_SCOPE is not None:
+                intf["scope"] = LAN_SCOPE
 
             if len(vlan_config) == 0:
+                intf["used_for"] = "lan"
                 if LAN_IP_PREFIX == "dhcp":
                     intf["ipv4_config"] = IPV4_TEMPLATE_DHCP
                 elif LAN_IP_PREFIX is None:
@@ -1150,7 +1165,7 @@ def config_interfaces(sase_session, interface_mapping, interface_ipconfig, usedf
             if item["ip_prefix"] != "dhcp":
                 config = {
                     "dhcp_config": None,
-                    "dns_v4_config": {"name_servers": item["dns"]},
+                    "dns_v4_config": None,
                     "routes": None,
                     "static_config": {"address": item["ip_prefix"]},
                     "type": "static"
@@ -1192,7 +1207,7 @@ def config_interfaces(sase_session, interface_mapping, interface_ipconfig, usedf
             if item["ip_prefix"] != "dhcp":
                 config = {
                     "dhcp_config": None,
-                    "dns_v4_config": {"name_servers": item["dns"]},
+                    "dns_v4_config": None,
                     "routes": None,
                     "static_config": {"address": item["ip_prefix"]},
                     "type": "static"
@@ -1211,6 +1226,7 @@ def config_interfaces(sase_session, interface_mapping, interface_ipconfig, usedf
 
         for intf in interfaces:
             if intf["name"] == LAN_INTERFACE:
+                intf["scope"] = LAN_SCOPE
                 intf["admin_up"] = True
                 intf["switch_port_config"] = {
                     "vlan_mode": "trunk",
@@ -1281,6 +1297,138 @@ def get_ha_interface_id(sase_session, site_id, elemshell_id):
         prisma_sase.jd_detailed(resp)
 
     return ha_intf_id
+
+
+def create_bgp_peer(sase_session, site_id, element_id):
+    ##############################################################################
+    # Edge Peer
+    ##############################################################################
+    edge_data = {
+        "name": "Edge-Peer",
+        "description": None,
+        "tags": None,
+        "peer_ip": "198.19.0.1",
+        "peer_ip_v6": None,
+        "allow_v4_prefixes": True,
+        "allow_v6_prefixes": False,
+        "remote_as_num": "65200",
+        "peer_type": "edge",
+        "route_map_in_id": None,
+        "route_map_out_id": None,
+        "update_source": None,
+        "update_source_v6": None,
+        "scope": "local",
+        "shutdown": False,
+        "bgp_config": None,
+        "vrf_context_id": GLOBALVRFID,
+        "router_id": None,
+        "advertise_default_route": False
+    }
+    resp = sase_session.post.bgppeers(site_id=site_id, elementshell_id=element_id, data=edge_data)
+    if resp.cgx_status:
+        print("\t\tEdge Peer created")
+    else:
+        print("ERR: Could not create Edge Peer")
+        prisma_sase.jd_detailed(resp)
+
+    ##############################################################################
+    # Core Peer
+    ##############################################################################
+    core_data = {
+        "name": "Core-Peer",
+        "description": None,
+        "tags": None,
+        "peer_ip": "192.168.102.1",
+        "peer_ip_v6": None,
+        "allow_v4_prefixes": True,
+        "allow_v6_prefixes": False,
+        "remote_as_num": "65100",
+        "peer_type": "core",
+        "route_map_in_id": None,
+        "route_map_out_id": None,
+        "update_source": None,
+        "update_source_v6": None,
+        "scope": "local",
+        "shutdown": False,
+        "bgp_config": None,
+        "vrf_context_id": GLOBALVRFID,
+        "router_id": None,
+        "advertise_default_route": False
+    }
+    resp = sase_session.post.bgppeers(site_id=site_id, elementshell_id=element_id, data=core_data)
+    if resp.cgx_status:
+        print("\t\tCore Peer created")
+    else:
+        print("ERR: Could not create Core Peer")
+        prisma_sase.jd_detailed(resp)
+
+    return
+
+
+def create_bgp_peer_branch(sase_session, site_id, element_id):
+    ##############################################################################
+    # WAN-Rtr Peer
+    ##############################################################################
+    wanrtr_data = {
+        "name": "WAN-Rtr",
+        "description": None,
+        "tags": None,
+        "peer_ip": "198.19.100.1",
+        "peer_ip_v6": None,
+        "allow_v4_prefixes": True,
+        "allow_v6_prefixes": False,
+        "remote_as_num": "65200",
+        "peer_type": "classic",
+        "route_map_in_id": None,
+        "route_map_out_id": None,
+        "update_source": None,
+        "update_source_v6": None,
+        "scope": "local",
+        "shutdown": False,
+        "bgp_config": None,
+        "vrf_context_id": GLOBALVRFID,
+        "router_id": None,
+        "advertise_default_route": False
+    }
+    resp = sase_session.post.bgppeers(site_id=site_id, elementshell_id=element_id, data=wanrtr_data)
+    if resp.cgx_status:
+        print("\t\tWAN-Rtr created")
+    else:
+        print("ERR: Could not create WAN-Rtr")
+        prisma_sase.jd_detailed(resp)
+
+    ##############################################################################
+    # LAN-Rtr Peer
+    ##############################################################################
+    lanrtr_data = {
+        "name": "LAN-Rtr",
+        "description": None,
+        "tags": None,
+        "peer_ip": "192.168.11.10",
+        "peer_ip_v6": None,
+        "allow_v4_prefixes": True,
+        "allow_v6_prefixes": False,
+        "remote_as_num": "65110",
+        "peer_type": "classic",
+        "route_map_in_id": None,
+        "route_map_out_id": None,
+        "update_source": None,
+        "update_source_v6": None,
+        "scope": "global",
+        "shutdown": False,
+        "bgp_config": None,
+        "vrf_context_id": GLOBALVRFID,
+        "router_id": None,
+        "advertise_default_route": False
+    }
+    resp = sase_session.post.bgppeers(site_id=site_id, elementshell_id=element_id, data=lanrtr_data)
+    if resp.cgx_status:
+        print("\t\tLAN-Rtr created")
+    else:
+        print("ERR: Could not create LAN-Rtr")
+        prisma_sase.jd_detailed(resp)
+
+    return
 
 
 def configure_byos(sase_session, dc_site_id, dc_type):
@@ -1432,12 +1580,15 @@ def configure_byos(sase_session, dc_site_id, dc_type):
                         print("ERR: Could not configure port 3 on DC-ION-1")
                         prisma_sase.jd_detailed(resp)
 
+        print("\tConfiguring BGP Peer on DC-ION-1")
+        create_bgp_peer(sase_session=sase_session, site_id=dc_site_id, element_id=dc_elem1_id)
+
     else:
         print("ERR: Could not create element shell for DC ION 1")
         prisma_sase.jd_detailed(resp)
 
     ##############################################################################
-    # Create Element Shell for DC ION 1
+    # Create Element Shell for DC ION 2
     ##############################################################################
     shell_data = {
         "tenant_id": sase_session.tenant_id,
@@ -1514,6 +1665,9 @@ def configure_byos(sase_session, dc_site_id, dc_type):
                     else:
                         print("ERR: Could not configure port 3 on DC-ION-2")
                         prisma_sase.jd_detailed(resp)
+
+        print("\tConfiguring BGP Peer on DC-ION-2")
+        create_bgp_peer(sase_session=sase_session, site_id=dc_site_id, element_id=dc_elem2_id)
 
     else:
         print("ERR: Could not create element shell for DC ION 2")
@@ -1694,6 +1848,9 @@ def configure_byos(sase_session, dc_site_id, dc_type):
                             else:
                                 print("ERR: Could not configure port 3 on DC2-ION-1")
                                 prisma_sase.jd_detailed(resp)
+
+                print("\tConfiguring BGP Peer on DC2-ION-1")
+                create_bgp_peer(sase_session=sase_session, site_id=dc_site_id, element_id=dc2_elem1_id)
 
             else:
                 print("ERR: Could not create element shell for DC2 ION 1")
@@ -2043,7 +2200,6 @@ def go():
             prisma_sase.jd_detailed(resp)
             sys.exit()
 
-
         ##############################################################################
         # Create SWIs - Public Circuits
         ##############################################################################
@@ -2181,6 +2337,18 @@ def go():
                 sys.exit()
 
         ##############################################################################
+        #
+        # BYOS:
+        # BGP Peer Configuration on Branch Site
+        #
+        ##############################################################################
+        if byos:
+            print("\tConfiguring BGP Peers on {} ION 1".format(SITE_NAME))
+            create_bgp_peer_branch(sase_session=sase_session, site_id=SITE_ID, element_id=ELEM_SHELL_ID_1)
+            if HA:
+                print("\tConfiguring BGP Peers on {} ION 2".format(SITE_NAME))
+                create_bgp_peer_branch(sase_session=sase_session, site_id=SITE_ID, element_id=ELEM_SHELL_ID_2)
+        ##############################################################################
         # Configure Element Shell Interfaces
         ##############################################################################
         interface_mapping_ion1={}
@@ -2227,13 +2395,22 @@ def go():
         elif PRIMARY_INTERNET_IP_PREFIX == "dhcp":
             interface_ipconfig_ion1[PRIMARY_INTERNET_INTERFACE] = IPV4_TEMPLATE_DHCP
         else:
-            config = {
-                "dhcp_config": None,
-                "dns_v4_config": {"name_servers": PRIMARY_INTERNET_DNS},
-                "routes": [{"destination": "0.0.0.0/0", "via": PRIMARY_INTERNET_GW}],
-                "static_config": {"address": PRIMARY_INTERNET_IP_PREFIX},
-                "type": "static"
-            }
+            if len(PRIMARY_INTERNET_DNS) > 0:
+                config = {
+                    "dhcp_config": None,
+                    "dns_v4_config": {"name_servers": PRIMARY_INTERNET_DNS},
+                    "routes": [{"destination": "0.0.0.0/0", "via": PRIMARY_INTERNET_GW}],
+                    "static_config": {"address": PRIMARY_INTERNET_IP_PREFIX},
+                    "type": "static"
+                }
+            else:
+                config = {
+                    "dhcp_config": None,
+                    "dns_v4_config": None,
+                    "routes": [{"destination": "0.0.0.0/0", "via": PRIMARY_INTERNET_GW}],
+                    "static_config": {"address": PRIMARY_INTERNET_IP_PREFIX},
+                    "type": "static"
+                }
             interface_ipconfig_ion1[PRIMARY_INTERNET_INTERFACE] = config
 
         if NUM_INTERNET > 1:
@@ -2247,13 +2424,22 @@ def go():
             elif SECONDARY_INTERNET_IP_PREFIX == "dhcp":
                 interface_ipconfig_ion1[SECONDARY_INTERNET_INTERFACE] = IPV4_TEMPLATE_DHCP
             else:
-                config = {
-                    "dhcp_config": None,
-                    "dns_v4_config": {"name_servers": SECONDARY_INTERNET_DNS},
-                    "routes": [{"destination": "0.0.0.0/0", "via": SECONDARY_INTERNET_GW}],
-                    "static_config": {"address": SECONDARY_INTERNET_IP_PREFIX},
-                    "type": "static"
-                }
+                if len(SECONDARY_INTERNET_DNS) > 0:
+                    config = {
+                        "dhcp_config": None,
+                        "dns_v4_config": {"name_servers": SECONDARY_INTERNET_DNS},
+                        "routes": [{"destination": "0.0.0.0/0", "via": SECONDARY_INTERNET_GW}],
+                        "static_config": {"address": SECONDARY_INTERNET_IP_PREFIX},
+                        "type": "static"
+                    }
+                else:
+                    config = {
+                        "dhcp_config": None,
+                        "dns_v4_config": None,
+                        "routes": [{"destination": "0.0.0.0/0", "via": SECONDARY_INTERNET_GW}],
+                        "static_config": {"address": SECONDARY_INTERNET_IP_PREFIX},
+                        "type": "static"
+                    }
                 interface_ipconfig_ion1[SECONDARY_INTERNET_INTERFACE] = config
 
             ##############################################################################
@@ -2266,13 +2452,23 @@ def go():
             elif PRIMARY_INTERNET_IP_PREFIX == "dhcp":
                 interface_ipconfig_ion2[SECONDARY_INTERNET_INTERFACE] = IPV4_TEMPLATE_DHCP
             else:
-                config = {
-                    "dhcp_config": None,
-                    "dns_v4_config": {"name_servers": PRIMARY_INTERNET_DNS},
-                    "routes": [{"destination": "0.0.0.0/0", "via": PRIMARY_INTERNET_GW}],
-                    "static_config": {"address": PRIMARY_INTERNET_IP_PREFIX},
-                    "type": "static"
-                }
+                if len(PRIMARY_INTERNET_DNS) > 0:
+                    config = {
+                        "dhcp_config": None,
+                        "dns_v4_config": {"name_servers": PRIMARY_INTERNET_DNS},
+                        "routes": [{"destination": "0.0.0.0/0", "via": PRIMARY_INTERNET_GW}],
+                        "static_config": {"address": PRIMARY_INTERNET_IP_PREFIX},
+                        "type": "static"
+                    }
+                else:
+                    config = {
+                        "dhcp_config": None,
+                        "dns_v4_config": None,
+                        "routes": [{"destination": "0.0.0.0/0", "via": PRIMARY_INTERNET_GW}],
+                        "static_config": {"address": PRIMARY_INTERNET_IP_PREFIX},
+                        "type": "static"
+                    }
+
                 interface_ipconfig_ion2[SECONDARY_INTERNET_INTERFACE] = config
 
             ##############################################################################
@@ -2285,13 +2481,22 @@ def go():
             elif SECONDARY_INTERNET_IP_PREFIX == "dhcp":
                 interface_ipconfig_ion2[PRIMARY_INTERNET_INTERFACE] = IPV4_TEMPLATE_DHCP
             else:
-                config = {
-                    "dhcp_config": None,
-                    "dns_v4_config": {"name_servers": SECONDARY_INTERNET_DNS},
-                    "routes": [{"destination": "0.0.0.0/0", "via": SECONDARY_INTERNET_GW}],
-                    "static_config": {"address": SECONDARY_INTERNET_IP_PREFIX},
-                    "type": "static"
-                }
+                if len(SECONDARY_INTERNET_DNS) > 0:
+                    config = {
+                        "dhcp_config": None,
+                        "dns_v4_config": {"name_servers": SECONDARY_INTERNET_DNS},
+                        "routes": [{"destination": "0.0.0.0/0", "via": SECONDARY_INTERNET_GW}],
+                        "static_config": {"address": SECONDARY_INTERNET_IP_PREFIX},
+                        "type": "static"
+                    }
+                else:
+                    config = {
+                        "dhcp_config": None,
+                        "dns_v4_config": None,
+                        "routes": [{"destination": "0.0.0.0/0", "via": SECONDARY_INTERNET_GW}],
+                        "static_config": {"address": SECONDARY_INTERNET_IP_PREFIX},
+                        "type": "static"
+                    }
                 interface_ipconfig_ion2[PRIMARY_INTERNET_INTERFACE] = config
 
         if NUM_PRIVATE > 0:
@@ -2305,13 +2510,22 @@ def go():
             elif PRIVATEWAN_IP_PREFIX == "dhcp":
                 interface_ipconfig_ion1[PRIVATEWAN_INTERFACE] = IPV4_TEMPLATE_DHCP
             else:
-                config = {
-                    "dhcp_config": None,
-                    "dns_v4_config": {"name_servers": PRIVATEWAN_DNS},
-                    "routes": [{"destination": "0.0.0.0/0", "via": PRIVATEWAN_GW}],
-                    "static_config": {"address": PRIVATEWAN_IP_PREFIX},
-                    "type": "static"
-                }
+                if len(PRIVATEWAN_DNS) > 0:
+                    config = {
+                        "dhcp_config": None,
+                        "dns_v4_config": {"name_servers": PRIVATEWAN_DNS},
+                        "routes": [{"destination": "0.0.0.0/0", "via": PRIVATEWAN_GW}],
+                        "static_config": {"address": PRIVATEWAN_IP_PREFIX},
+                        "type": "static"
+                    }
+                else:
+                    config = {
+                        "dhcp_config": None,
+                        "dns_v4_config": None,
+                        "routes": [{"destination": "0.0.0.0/0", "via": PRIVATEWAN_GW}],
+                        "static_config": {"address": PRIVATEWAN_IP_PREFIX},
+                        "type": "static"
+                    }
                 interface_ipconfig_ion1[PRIVATEWAN_INTERFACE] = config
 
             ##############################################################################
@@ -2324,13 +2538,22 @@ def go():
             elif PRIMARY_INTERNET_IP_PREFIX == "dhcp":
                 interface_ipconfig_ion2[PRIVATEWAN_INTERFACE] = IPV4_TEMPLATE_DHCP
             else:
-                config = {
-                    "dhcp_config": None,
-                    "dns_v4_config": {"name_servers": PRIMARY_INTERNET_DNS},
-                    "routes": [{"destination": "0.0.0.0/0", "via": PRIMARY_INTERNET_GW}],
-                    "static_config": {"address": PRIMARY_INTERNET_IP_PREFIX},
-                    "type": "static"
-                }
+                if len(PRIMARY_INTERNET_DNS) > 0:
+                    config = {
+                        "dhcp_config": None,
+                        "dns_v4_config": {"name_servers": PRIMARY_INTERNET_DNS},
+                        "routes": [{"destination": "0.0.0.0/0", "via": PRIMARY_INTERNET_GW}],
+                        "static_config": {"address": PRIMARY_INTERNET_IP_PREFIX},
+                        "type": "static"
+                    }
+                else:
+                    config = {
+                        "dhcp_config": None,
+                        "dns_v4_config": None,
+                        "routes": [{"destination": "0.0.0.0/0", "via": PRIMARY_INTERNET_GW}],
+                        "static_config": {"address": PRIMARY_INTERNET_IP_PREFIX},
+                        "type": "static"
+                    }
                 interface_ipconfig_ion2[PRIVATEWAN_INTERFACE] = config
 
             ##############################################################################
@@ -2343,13 +2566,22 @@ def go():
             elif PRIVATEWAN_IP_PREFIX == "dhcp":
                 interface_ipconfig_ion2[PRIMARY_INTERNET_INTERFACE] = IPV4_TEMPLATE_DHCP
             else:
-                config = {
-                    "dhcp_config": None,
-                    "dns_v4_config": {"name_servers": PRIVATEWAN_DNS},
-                    "routes": [{"destination": "0.0.0.0/0", "via": PRIVATEWAN_GW}],
-                    "static_config": {"address": PRIVATEWAN_IP_PREFIX},
-                    "type": "static"
-                }
+                if len(PRIVATEWAN_DNS) > 0:
+                    config = {
+                        "dhcp_config": None,
+                        "dns_v4_config": {"name_servers": PRIVATEWAN_DNS},
+                        "routes": [{"destination": "0.0.0.0/0", "via": PRIVATEWAN_GW}],
+                        "static_config": {"address": PRIVATEWAN_IP_PREFIX},
+                        "type": "static"
+                    }
+                else:
+                    config = {
+                        "dhcp_config": None,
+                        "dns_v4_config": None,
+                        "routes": [{"destination": "0.0.0.0/0", "via": PRIVATEWAN_GW}],
+                        "static_config": {"address": PRIVATEWAN_IP_PREFIX},
+                        "type": "static"
+                    }
                 interface_ipconfig_ion2[PRIMARY_INTERNET_INTERFACE] = config
 
 
@@ -2367,9 +2599,14 @@ def go():
                               element_id=ELEM_SHELL_ID_2, ion_model=BRANCH_MODEL)
 
         ##############################################################################
-        # Bind Zones to Interface: VPN
+        #
+        # ZONE BINDING
+        #
         ##############################################################################
         print("Zone binding")
+        ##############################################################################
+        # Bind Zones to Interface: VPN
+        ##############################################################################
         ###############################################################################
         # Get WAN Overlay IDs for binding
         # Bind VPN zone to WAN Overlay
@@ -2496,20 +2733,23 @@ def go():
                 prisma_sase.jd_detailed(resp)
 
             print("\tBinding Zone: GUEST")
-            zone_data = {
-                "zone_id": zone_name_id["guest"],
-                "lannetwork_ids": [],
-                "interface_ids": [guest_interface_id],
-                "wanoverlay_ids": [],
-                "waninterface_ids": []
-            }
+            if guest_interface_id is not None:
+                zone_data = {
+                    "zone_id": zone_name_id["guest"],
+                    "lannetwork_ids": [],
+                    "interface_ids": [guest_interface_id],
+                    "wanoverlay_ids": [],
+                    "waninterface_ids": []
+                }
 
-            resp = sase_session.post.elementsecurityzones(site_id=SITE_ID, element_id=ELEM_ID_1, data=zone_data)
-            if resp.cgx_status:
-                print("\t\tGUEST bound to interface {} on ION 1".format(guest_interface_name))
+                resp = sase_session.post.elementsecurityzones(site_id=SITE_ID, element_id=ELEM_ID_1, data=zone_data)
+                if resp.cgx_status:
+                    print("\t\tGUEST bound to interface {} on ION 1".format(guest_interface_name))
+                else:
+                    print("ERR: Could not bind GUEST to interface {} on ION 1".format(guest_interface_name))
+                    prisma_sase.jd_detailed(resp)
             else:
-                print("ERR: Could not bind GUEST to interface {} on ION 1".format(guest_interface_name))
-                prisma_sase.jd_detailed(resp)
+                print("\t\tGUEST zone not bound. No mapping interface!")
 
             if HA:
                 ###############################################################################
@@ -2529,19 +2769,22 @@ def go():
                     print("ERR: Could not retrieve interfaces")
                     prisma_sase.jd_detailed(resp)
 
-                zone_data = {
-                    "zone_id": zone_name_id["guest"],
-                    "lannetwork_ids": [],
-                    "interface_ids": [guest_interface_id],
-                    "wanoverlay_ids": [],
-                    "waninterface_ids": []
-                }
-                resp = sase_session.post.elementsecurityzones(site_id=SITE_ID, element_id=ELEM_ID_2, data=zone_data)
-                if resp.cgx_status:
-                    print("\t\tGUEST bound to interface {} on ION 2".format(guest_interface_name))
+                if guest_interface_id is not None:
+                    zone_data = {
+                        "zone_id": zone_name_id["guest"],
+                        "lannetwork_ids": [],
+                        "interface_ids": [guest_interface_id],
+                        "wanoverlay_ids": [],
+                        "waninterface_ids": []
+                    }
+                    resp = sase_session.post.elementsecurityzones(site_id=SITE_ID, element_id=ELEM_ID_2, data=zone_data)
+                    if resp.cgx_status:
+                        print("\t\tGUEST bound to interface {} on ION 2".format(guest_interface_name))
+                    else:
+                        print("ERR: Could not bind GUEST to interface {} on ION 2".format(guest_interface_name))
+                        prisma_sase.jd_detailed(resp)
                 else:
-                    print("ERR: Could not bind GUEST to interface {} on ION 2".format(guest_interface_name))
-                    prisma_sase.jd_detailed(resp)
+                    print("\t\tGUEST zone not bound. No mapping interface!")
 
             ##############################################################################
             # Bind Zones to Interface: LAN
@@ -2564,20 +2807,23 @@ def go():
                 prisma_sase.jd_detailed(resp)
 
             print("\tBinding Zone: LAN")
-            zone_data = {
-                "zone_id": zone_name_id["lan"],
-                "lannetwork_ids": [],
-                "interface_ids": lan_interface_ids,
-                "wanoverlay_ids": [],
-                "waninterface_ids": []
-            }
+            if len(lan_interface_ids) > 0:
+                zone_data = {
+                    "zone_id": zone_name_id["lan"],
+                    "lannetwork_ids": [],
+                    "interface_ids": lan_interface_ids,
+                    "wanoverlay_ids": [],
+                    "waninterface_ids": []
+                }
 
-            resp = sase_session.post.elementsecurityzones(site_id=SITE_ID, element_id=ELEM_ID_1, data=zone_data)
-            if resp.cgx_status:
-                print("\t\tLAN bound to interface {} on ION 1".format(lan_interface_names))
+                resp = sase_session.post.elementsecurityzones(site_id=SITE_ID, element_id=ELEM_ID_1, data=zone_data)
+                if resp.cgx_status:
+                    print("\t\tLAN bound to interface {} on ION 1".format(lan_interface_names))
+                else:
+                    print("ERR: Could not bind LAN to interface {} on ION 1".format(lan_interface_names))
+                    prisma_sase.jd_detailed(resp)
             else:
-                print("ERR: Could not bind LAN to interface {} on ION 1".format(lan_interface_names))
-                prisma_sase.jd_detailed(resp)
+                print("\t\tLAN zone not bound. No mapping interface!")
 
             if HA:
                 ###############################################################################
@@ -2597,19 +2843,22 @@ def go():
                     print("ERR: Could not retrieve interfaces")
                     prisma_sase.jd_detailed(resp)
 
-                zone_data = {
-                    "zone_id": zone_name_id["lan"],
-                    "lannetwork_ids": [],
-                    "interface_ids": lan_interface_ids,
-                    "wanoverlay_ids": [],
-                    "waninterface_ids": []
-                }
-                resp = sase_session.post.elementsecurityzones(site_id=SITE_ID, element_id=ELEM_ID_2, data=zone_data)
-                if resp.cgx_status:
-                    print("\t\tLAN bound to interface {} on ION 2".format(lan_interface_names))
+                if len(lan_interface_ids) > 0:
+                    zone_data = {
+                        "zone_id": zone_name_id["lan"],
+                        "lannetwork_ids": [],
+                        "interface_ids": lan_interface_ids,
+                        "wanoverlay_ids": [],
+                        "waninterface_ids": []
+                    }
+                    resp = sase_session.post.elementsecurityzones(site_id=SITE_ID, element_id=ELEM_ID_2, data=zone_data)
+                    if resp.cgx_status:
+                        print("\t\tLAN bound to interface {} on ION 2".format(lan_interface_names))
+                    else:
+                        print("ERR: Could not bind LAN to interface {} on ION 2".format(lan_interface_names))
+                        prisma_sase.jd_detailed(resp)
                 else:
-                    print("ERR: Could not bind LAN to interface {} on ION 2".format(lan_interface_names))
-                    prisma_sase.jd_detailed(resp)
+                    print("\t\tLAN zone not bound. No mapping interface!")
 
         ##############################################################################
         # Create Spoke Cluster
@@ -2691,6 +2940,7 @@ def go():
             else:
                 print("ERR: Could not create spokeclusters")
                 prisma_sase.jd_detailed(resp)
+
 
     ##############################################################################
     #
@@ -3073,6 +3323,7 @@ def go():
     ##############################################################################
     if byos:
         configure_byos(sase_session=sase_session, dc_site_id=DC_SITE_ID, dc_type=dctype)
+
     ##############################################################################
     # End of script
     ##############################################################################
