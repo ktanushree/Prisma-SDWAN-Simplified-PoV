@@ -3,7 +3,7 @@
 """
 Script to setup Prisma SDWAN Simplified PoV using a CSV
 Author: tkamath@paloaltonetworks.com
-Version: 1.0.0b9
+Version: 1.0.0b10
 """
 import prisma_sase
 import argparse
@@ -204,7 +204,8 @@ PRIVATEWAN_DNS=["8.8.8.8", "8.8.4.4"]
 #############################################################
 LAN_INTERFACE="5"
 LAN_IP_PREFIX="dhcp"
-LAN_SCOPE=""
+LAN_SCOPE="local"
+LAN_DNS = None
 #############################################################
 # VLAN Config
 #############################################################
@@ -292,7 +293,7 @@ def transpose_config(rowdata):
     NUM_INTERNET = int(rowdata["internet_circuit_count"])
     NUM_PRIVATE = int(rowdata["private_circuit_count"])
 
-    if rowdata["default_settings"] in ["No", "no"]:
+    if rowdata["default_settings"] in ["No", "no", "NO"]:
         BRANCH_DOMAIN = rowdata["branch_domain"]
         DOMAIN_LIST = rowdata["domain_list"]
         PRIMARY_INTERNET_CATEGORY = rowdata["primary_internet_category"]
@@ -405,7 +406,8 @@ ION_MODEL_MAPPING = {
     "5200": "ion 5200",
     "3102v": "ion 3102v",
     "3104v": "ion 3104v",
-    "3108v": "ion 3108v"
+    "3108v": "ion 3108v",
+    "7108v": "ion 7108v"
 }
 ION_SOFTWARE_VERSION = "6.1.9-b2"
 ##############################################################################
@@ -748,7 +750,9 @@ def create_dicts(sase_session):
                 NWSTACKID=item["id"]
 
                 if CUSTOMER_NAME not in item["name"]:
-                    newname = "{}{}".format(CUSTOMER_NAME, item["name"])
+                    #newname = "{}{}".format(CUSTOMER_NAME, item["name"])
+                    newname = "{} Default Path Stack (Simple)".format(CUSTOMER_NAME)
+
                     item["name"] = newname
                     resp = sase_session.put.networkpolicysetstacks(networkpolicysetstack_id=item["id"], data=item)
                     if resp.cgx_status:
@@ -773,7 +777,9 @@ def create_dicts(sase_session):
                 QOSSTACKID=item["id"]
 
                 if CUSTOMER_NAME not in item["name"]:
-                    newname = "{}{}".format(CUSTOMER_NAME, item["name"])
+                    #newname = "{}{}".format(CUSTOMER_NAME, item["name"])
+                    newname = "{} Default QoS Stack (Simple)".format(CUSTOMER_NAME)
+
                     item["name"] = newname
                     resp = sase_session.put.prioritypolicysetstacks(prioritypolicysetstack_id=item["id"], data=item)
                     if resp.cgx_status:
@@ -797,7 +803,9 @@ def create_dicts(sase_session):
                 NATSTACKID=item["id"]
 
                 if CUSTOMER_NAME not in item["name"]:
-                    newname = "{}{}".format(CUSTOMER_NAME, item["name"])
+                    #newname = "{}{}".format(CUSTOMER_NAME, item["name"])
+                    newname = "{} Default NAT Stack (Simple)".format(CUSTOMER_NAME)
+
                     item["name"] = newname
                     resp = sase_session.put.natpolicysetstacks(natpolicysetstack_id=item["id"], data=item)
                     if resp.cgx_status:
@@ -923,17 +931,21 @@ def create_dicts(sase_session):
         resp = sase_session.get.ngfwsecuritypolicysetstacks(ngfwsecuritypolicysetstack_id=NGFWSTACKID)
         if resp.cgx_status:
             item = resp.cgx_content
-            newname = "{}{}".format(CUSTOMER_NAME, item["name"])
+            #newname = "{}{}".format(CUSTOMER_NAME, item["name"])
+            newname = "{} Security Stack (Simple)".format(CUSTOMER_NAME)
+
             item["name"] = newname
             resp = sase_session.put.ngfwsecuritypolicysetstacks(ngfwsecuritypolicysetstack_id=item["id"], data=item)
             if resp.cgx_status:
                 print("\t\tDefault Security Stack updated to {}".format(item["name"]))
             else:
-                print("ERR: Could not update Default Secuirty Stack Name")
+                print("ERR: Could not update Default Security Stack Name")
                 prisma_sase.jd_detailed(resp)
 
     else:
-        name = "{}Branch Simple Security Policy Stack (Simple)".format(CUSTOMER_NAME)
+        #name = "{}Branch Simple Security Policy Stack (Simple)".format(CUSTOMER_NAME)
+        name = "{} Security Stack (Simple)".format(CUSTOMER_NAME)
+
         data = {
             "name": name,
             "description": None,
@@ -1086,7 +1098,7 @@ def config_interfaces(sase_session, interface_mapping, interface_ipconfig, usedf
     #######################################################################
     # Admin up Controller Interface
     #######################################################################
-    if ion_model in ["3102v", "3104v", "3108v"]:
+    if ion_model in ["3102v", "3104v", "3108v", "7108v"]:
         for intf in interfaces:
             if "controller" in intf["name"]:
                 intf["admin_up"] = True
@@ -1105,7 +1117,7 @@ def config_interfaces(sase_session, interface_mapping, interface_ipconfig, usedf
     #######################################################################
     # Create Subinterface
     #######################################################################
-    if ion_model in ["1200", "3200", "5200", "9200", "3102v", "3104v", "3108v"]:
+    if ion_model in ["1200", "3200", "5200", "9200", "3102v", "3104v", "3108v", "7108v"]:
         #######################################################################
         # Get LAN Interface ID, set admin up
         #######################################################################
@@ -1858,6 +1870,7 @@ def configure_byos(sase_session, dc_site_id, dc_type):
 
     return
 
+
 def go():
     #############################################################################
     # Global Variables
@@ -1973,6 +1986,58 @@ def go():
                     print("\t{}".format(item))
 
             sys.exit()
+
+        #############################################################################
+        # Validate config
+        #############################################################################
+        if row["default_settings"] in ["No", "no", "NO"]:
+
+            #############################################################################
+            # Internet Circuit
+            #############################################################################
+            if NUM_INTERNET > 0:
+                if ((PRIMARY_INTERNET_CIRCUITNAME is None) or
+                        (PRIMARY_INTERNET_PROVIDER is None) or
+                        (PRIMARY_INTERNET_CATEGORY is None) or
+                        (PRIMARY_INTERNET_INTERFACE is None)):
+                    print("ERR: Incomplete form! Please provide all the data relevant to the PRIMARY INTERNET CIRCUIT!")
+                    sys.exit()
+
+                if NUM_INTERNET > 1:
+                    if ((SECONDARY_INTERNET_CIRCUITNAME is None) or
+                            (SECONDARY_INTERNET_PROVIDER is None) or
+                            (SECONDARY_INTERNET_CATEGORY is None) or
+                            (SECONDARY_INTERNET_INTERFACE is None)):
+                        print("ERR: Incomplete form! Please provide all the data relevant to the SECONDARY INTERNET CIRCUIT!")
+                        sys.exit()
+
+                if NUM_INTERNET > 2:
+                    print("ERR: Invalid internet_circuit_count! Only 2 internet circuit configuration supported!")
+                    sys.exit()
+
+            #############################################################################
+            # Private WAN Circuit
+            #############################################################################
+            if NUM_PRIVATE > 0:
+                if ((PRIVATEWAN_CIRCUITNAME is None) or
+                        (PRIVATEWAN_PROVIDER is None) or
+                        (PRIVATEWAN_CATEGORY is None) or
+                        (PRIVATEWAN_INTERFACE is None)):
+                    print("ERR: Incomplete form! Please provide all the data relevant to the PRIVATEWAN CIRCUIT!")
+                    sys.exit()
+
+                if NUM_PRIVATE > 1:
+                    print("ERR: Invalid private_circuit_count! Only 1 Private circuit configuration supported!")
+                    sys.exit()
+
+            #############################################################################
+            # VLAN Data
+            #############################################################################
+            if NUM_VLANS > 0:
+                if len(VLAN_CONFIG) != NUM_VLANS:
+                    print("ERR: Mismatch in number of VLANs [{}] and VLAN Config [{}]. Please provide all the configuration!".format(NUM_VLANS, len(VLAN_CONFIG)))
+                    sys.exit()
+
         ##############################################################################
         # WAN Networks
         ##############################################################################
@@ -2802,6 +2867,10 @@ def go():
                         lan_interface_ids.append(intf["id"])
                         lan_interface_names.append(intf["name"])
 
+                    if intf["name"] == LAN_INTERFACE:
+                        lan_interface_ids.append(intf["id"])
+                        lan_interface_names.append(intf["name"])
+
             else:
                 print("ERR: Could not retrieve interfaces")
                 prisma_sase.jd_detailed(resp)
@@ -2836,6 +2905,10 @@ def go():
                     interfaces = resp.cgx_content.get("items", None)
                     for intf in interfaces:
                         if intf["description"] in ["DATA", "VOICE"]:
+                            lan_interface_ids.append(intf["id"])
+                            lan_interface_names.append(intf["name"])
+
+                        if intf["name"] == LAN_INTERFACE:
                             lan_interface_ids.append(intf["id"])
                             lan_interface_names.append(intf["name"])
 

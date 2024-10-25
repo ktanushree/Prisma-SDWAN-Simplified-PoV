@@ -100,7 +100,8 @@ Config:
 ## Version
 | Version | Build | Changes |
 | ------- | ----- | ------- |
-| **1.0.0** | **b9** | Bug fixes, BYOS: BGP peers for DC & Branch |
+| **1.0.0** | **b10** | Bug fixes, Support for 7108v, Updated Policy Stack naming convention |
+|           | **b9** | Bug fixes, BYOS: BGP peers for DC & Branch |
 |           | **b8** | Bug fixes, BYOS DC set to active |
 |           | **b7** | Bug fixes, Support for BYOS switch, cleanup updated for BYOS |
 |           | **b6** | Bug fix for zone binding error |
