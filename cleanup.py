@@ -3,7 +3,7 @@
 """
 Script to setup Prisma SDWAN Simplified PoV
 Author: tkamath@paloaltonetworks.com
-Version: 1.0.0b10
+Version: 1.0.0b11
 """
 import prisma_sase
 import argparse
@@ -97,6 +97,7 @@ def go():
     # Translation Dicts
     ##############################################################################
     create_dicts(sase_session)
+    customer_name = "{} ".format(customer_name)
 
     ##############################################################################
     # Reset NW Stack Name
@@ -119,6 +120,25 @@ def go():
         prisma_sase.jd_detailed(resp)
 
     ##############################################################################
+    # Reset NW Set Name
+    ##############################################################################
+    resp = sase_session.get.networkpolicysets()
+    if resp.cgx_status:
+        itemlist = resp.cgx_content.get("items", None)
+        for item in itemlist:
+            if customer_name in item["name"]:
+                name = item["name"].replace(customer_name,"")
+                item["name"] = name
+                resp = sase_session.put.networkpolicysets(networkpolicyset_id=item["id"], data=item)
+                if resp.cgx_status:
+                    print("NW Set name updated to {}".format(item["name"]))
+                else:
+                    print("ERR: Could not update NW Set name")
+                    prisma_sase.jd_detailed(resp)
+    else:
+        print("ERR: Could not retrieve NW Sets")
+        prisma_sase.jd_detailed(resp)
+    ##############################################################################
     # Reset QoS Stack Name
     ##############################################################################
     resp = sase_session.get.prioritypolicysetstacks()
@@ -136,6 +156,26 @@ def go():
                     prisma_sase.jd_detailed(resp)
     else:
         print("ERR: Could not retrieve QoS Stack")
+        prisma_sase.jd_detailed(resp)
+
+    ##############################################################################
+    # Reset QoS Set Name
+    ##############################################################################
+    resp = sase_session.get.prioritypolicysets()
+    if resp.cgx_status:
+        itemlist = resp.cgx_content.get("items", None)
+        for item in itemlist:
+            if customer_name in item["name"]:
+                name = item["name"].replace(customer_name,"")
+                item["name"] = name
+                resp = sase_session.put.prioritypolicysets(prioritypolicyset_id=item["id"], data=item)
+                if resp.cgx_status:
+                    print("QoS Set name updated to {}".format(item["name"]))
+                else:
+                    print("ERR: Could not update QoS Set name")
+                    prisma_sase.jd_detailed(resp)
+    else:
+        print("ERR: Could not retrieve QoS Sets")
         prisma_sase.jd_detailed(resp)
 
     ##############################################################################
@@ -157,6 +197,26 @@ def go():
     else:
         print("ERR: Could not retrieve NAT Stack")
         prisma_sase.jd_detailed(resp)
+
+    ##############################################################################
+    # Reset NAT Set Name
+    ##############################################################################
+    resp = sase_session.get.natpolicysets()
+    if resp.cgx_status:
+        itemlist = resp.cgx_content.get("items", None)
+        for item in itemlist:
+            if customer_name in item["name"]:
+                name = item["name"].replace(customer_name,"")
+                item["name"] = name
+                resp = sase_session.put.natpolicysets(natpolicyset_id=item["id"], data=item)
+                if resp.cgx_status:
+                    print("NAT Set name updated to {}".format(item["name"]))
+                else:
+                    print("ERR: Could not update NAT Set name")
+                    prisma_sase.jd_detailed(resp)
+    else:
+        print("ERR: Could not retrieve NAT Sets")
+        prisma_sase.jd_detailed(resp)
     ##############################################################################
     # Reset NGFW Stack Name
     ##############################################################################
@@ -177,6 +237,29 @@ def go():
         print("ERR: Could not retrieve NGFW Stack")
         prisma_sase.jd_detailed(resp)
 
+    ##############################################################################
+    # Reset NAT Set Name
+    ##############################################################################
+    resp = sase_session.get.ngfwsecuritypolicysets()
+    if resp.cgx_status:
+        itemlist = resp.cgx_content.get("items", None)
+        for item in itemlist:
+            if customer_name in item["name"]:
+                name = item["name"].replace(customer_name,"")
+                item["name"] = name
+                resp = sase_session.put.ngfwsecuritypolicysets(ngfwsecuritypolicyset_id=item["id"], data=item)
+                if resp.cgx_status:
+                    print("NGFW Set name updated to {}".format(item["name"]))
+                else:
+                    print("ERR: Could not update NGFW Set name")
+                    prisma_sase.jd_detailed(resp)
+    else:
+        print("ERR: Could not retrieve NGFW Sets")
+        prisma_sase.jd_detailed(resp)
+
+    ##############################################################################
+    # Check if only policies need to be updates
+    ##############################################################################
     if policy_only == "True":
         sys.exit()
     ##############################################################################

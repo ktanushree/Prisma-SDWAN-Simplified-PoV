@@ -3,7 +3,7 @@
 """
 Script to setup Prisma SDWAN Simplified PoV using a CSV
 Author: tkamath@paloaltonetworks.com
-Version: 1.0.0b10
+Version: 1.0.0b11
 """
 import prisma_sase
 import argparse
@@ -380,6 +380,8 @@ def transpose_config(rowdata):
 ##############################################################################
 # Set Global dicts & variables
 ##############################################################################
+DC_AS_NUM="65101"
+BRANCH_AS_NUM="65111"
 NWSTACKID = None
 QOSSTACKID = None
 NATSTACKID = None
@@ -766,6 +768,31 @@ def create_dicts(sase_session):
         prisma_sase.jd_detailed(resp)
 
     #
+    # Network Sets
+    #
+    print("\tNetwork Sets")
+    resp = sase_session.get.networkpolicysets()
+    if resp.cgx_status:
+        policysets = resp.cgx_content.get("items", None)
+        for ps in policysets:
+            if CUSTOMER_NAME not in ps["name"]:
+                if ps["defaultrule_policyset"]:
+                    newname = "{} Default Path Set (Simple)".format(CUSTOMER_NAME)
+                else:
+                    newname = "{} Path Set (Simple)".format(CUSTOMER_NAME)
+
+                ps["name"]=newname
+                resp = sase_session.put.networkpolicysets(networkpolicyset_id=ps["id"], data=ps)
+                if resp.cgx_status:
+                    print("\t\tPath Policy Set Name updated to {}".format(ps["name"]))
+                else:
+                    print("ERR: Could not edit Path Policy Set Name")
+                    prisma_sase.jd_detailed(resp)
+    else:
+        print("ERR: Could not retrieve Path Policy Sets")
+        prisma_sase.jd_detailed(resp)
+
+    #
     # QoS Stack
     #
     print("\tQoS Stack")
@@ -789,6 +816,31 @@ def create_dicts(sase_session):
                         prisma_sase.jd_detailed(resp)
     else:
         print("ERR: Could not retrieve Priority Policy Set Stacks")
+        prisma_sase.jd_detailed(resp)
+
+    #
+    # QoS Sets
+    #
+    print("\tQoS Set")
+    resp = sase_session.get.prioritypolicysets()
+    if resp.cgx_status:
+        policysets = resp.cgx_content.get("items", None)
+        for ps in policysets:
+            if CUSTOMER_NAME not in ps["name"]:
+                if ps["defaultrule_policyset"]:
+                    newname = "{} Default QoS Set (Simple)".format(CUSTOMER_NAME)
+                else:
+                    newname = "{} QoS Set (Simple)".format(CUSTOMER_NAME)
+
+                ps["name"] = newname
+                resp = sase_session.put.prioritypolicysets(prioritypolicyset_id=ps["id"], data=ps)
+                if resp.cgx_status:
+                    print("\t\tQoS Policy Set Name updated to {}".format(ps["name"]))
+                else:
+                    print("ERR: Could not edit QoS Policy Set Name")
+                    prisma_sase.jd_detailed(resp)
+    else:
+        print("ERR: Could not retrieve QoS Policy Sets")
         prisma_sase.jd_detailed(resp)
 
     #
@@ -816,6 +868,28 @@ def create_dicts(sase_session):
 
     else:
         print("ERR: Could not retrieve NAT Policy Set Stacks")
+        prisma_sase.jd_detailed(resp)
+
+
+    #
+    # NAT Sets
+    #
+    print("\tNAT Set")
+    resp = sase_session.get.natpolicysets()
+    if resp.cgx_status:
+        policysets = resp.cgx_content.get("items", None)
+        for ps in policysets:
+            if CUSTOMER_NAME not in ps["name"]:
+                newname = "{} NAT Set (Simple)".format(CUSTOMER_NAME)
+                ps["name"] = newname
+                resp = sase_session.put.natpolicysets(natpolicyset_id=ps["id"], data=ps)
+                if resp.cgx_status:
+                    print("\t\tNAT Policy Set Name updated to {}".format(ps["name"]))
+                else:
+                    print("ERR: Could not edit NAT Policy Set Name")
+                    prisma_sase.jd_detailed(resp)
+    else:
+        print("ERR: Could not retrieve NAT Policy Sets")
         prisma_sase.jd_detailed(resp)
 
     #
@@ -867,7 +941,7 @@ def create_dicts(sase_session):
 
     defpol_id = None
     if "Branch Simple Security Policy Stack Default Rule Policy Set (Simple)" in secset_name_id.keys():
-        print("\tBranch Simple Security Policy Stack Default Rule Policy Set (Simple) already created")
+        print("\t\tBranch Simple Security Policy Stack Default Rule Policy Set (Simple) already created")
         defpol_id = secset_name_id["Branch Simple Security Policy Stack Default Rule Policy Set (Simple)"]
 
     else:
@@ -881,7 +955,7 @@ def create_dicts(sase_session):
         }
         resp = sase_session.post.ngfwsecuritypolicysets(data=data)
         if resp.cgx_status:
-            print("\tBranch Simple Security Policy Stack Default Rule Policy Set (Simple) policy set created")
+            print("\t\tBranch Simple Security Policy Stack Default Rule Policy Set (Simple) policy set created")
             defpol_id = resp.cgx_content.get("id")
         else:
             print("ERR: Could not create Branch Simple Security Policy Stack Default Rule Policy Set (Simple)")
@@ -924,6 +998,7 @@ def create_dicts(sase_session):
         print("ERR: Could not retrieve Security Stack")
         prisma_sase.jd_detailed(resp)
 
+    newname = "{} Security Stack (Simple)".format(CUSTOMER_NAME)
     if "Branch Simple Security Policy Stack (Simple)" in secstack_name_id.keys():
         print("\tBranch Simple Security Policy Stack (Simple) already exists")
         NGFWSTACKID=secstack_name_id["Branch Simple Security Policy Stack (Simple)"]
@@ -931,13 +1006,28 @@ def create_dicts(sase_session):
         resp = sase_session.get.ngfwsecuritypolicysetstacks(ngfwsecuritypolicysetstack_id=NGFWSTACKID)
         if resp.cgx_status:
             item = resp.cgx_content
-            #newname = "{}{}".format(CUSTOMER_NAME, item["name"])
-            newname = "{} Security Stack (Simple)".format(CUSTOMER_NAME)
-
             item["name"] = newname
             resp = sase_session.put.ngfwsecuritypolicysetstacks(ngfwsecuritypolicysetstack_id=item["id"], data=item)
             if resp.cgx_status:
                 print("\t\tDefault Security Stack updated to {}".format(item["name"]))
+                secstack_name_id[newname] = item["id"]
+            else:
+                print("ERR: Could not update Default Security Stack Name")
+                prisma_sase.jd_detailed(resp)
+
+    elif newname in secstack_name_id.keys():
+        NGFWSTACKID = secstack_name_id[newname]
+
+    elif "Security Stack (Simple)" in secstack_name_id.keys():
+        NGFWSTACKID = secstack_name_id["Security Stack (Simple)"]
+        resp = sase_session.get.ngfwsecuritypolicysetstacks(ngfwsecuritypolicysetstack_id=NGFWSTACKID)
+        if resp.cgx_status:
+            item = resp.cgx_content
+            item["name"] = newname
+            resp = sase_session.put.ngfwsecuritypolicysetstacks(ngfwsecuritypolicysetstack_id=item["id"], data=item)
+            if resp.cgx_status:
+                print("\t\tDefault Security Stack updated to {}".format(item["name"]))
+                secstack_name_id[newname] = item["id"]
             else:
                 print("ERR: Could not update Default Security Stack Name")
                 prisma_sase.jd_detailed(resp)
@@ -945,9 +1035,8 @@ def create_dicts(sase_session):
     else:
         #name = "{}Branch Simple Security Policy Stack (Simple)".format(CUSTOMER_NAME)
         name = "{} Security Stack (Simple)".format(CUSTOMER_NAME)
-
         data = {
-            "name": name,
+            "name": newname,
             "description": None,
             "tags": None,
             "policyset_ids": [NGFWPOLICYSETID],
@@ -1311,7 +1400,38 @@ def get_ha_interface_id(sase_session, site_id, elemshell_id):
     return ha_intf_id
 
 
+def update_bgpconfigs(sase_session, site_id, element_id, as_num):
+    ##############################################################################
+    # Set Global BGP Config
+    ##############################################################################
+    resp = sase_session.get.bgpconfigs(site_id, element_id)
+    if resp.cgx_status:
+        bgpconfigs = resp.cgx_content.get("items", None)
+        for bgpconf in bgpconfigs:
+            bgpconf['local_as_num'] = as_num
+            resp = sase_session.put.bgpconfigs(site_id=site_id,
+                                               element_id=element_id,
+                                               bgpconfig_id=bgpconf["id"],
+                                               data=bgpconf)
+            if resp.cgx_status:
+                print("\tUpdated AS# to {}".format(as_num))
+            else:
+                print("ERR: Could not update AS#")
+                prisma_sase.jd_detailed(resp)
+
+    else:
+        print("ERR: Could not get BGP Configs")
+        prisma_sase.jd_detailed(resp)
+
+    return
+
+
 def create_bgp_peer(sase_session, site_id, element_id):
+    ##############################################################################
+    # Set Global BGP Config
+    # Use AS_NUM 65101 for DC
+    ##############################################################################
+    update_bgpconfigs(sase_session=sase_session, site_id=site_id, element_id=element_id, as_num=DC_AS_NUM)
     ##############################################################################
     # Edge Peer
     ##############################################################################
@@ -1336,7 +1456,7 @@ def create_bgp_peer(sase_session, site_id, element_id):
         "router_id": None,
         "advertise_default_route": False
     }
-    resp = sase_session.post.bgppeers(site_id=site_id, elementshell_id=element_id, data=edge_data)
+    resp = sase_session.post.bgppeers(site_id=site_id, element_id=element_id, data=edge_data)
     if resp.cgx_status:
         print("\t\tEdge Peer created")
     else:
@@ -1367,7 +1487,7 @@ def create_bgp_peer(sase_session, site_id, element_id):
         "router_id": None,
         "advertise_default_route": False
     }
-    resp = sase_session.post.bgppeers(site_id=site_id, elementshell_id=element_id, data=core_data)
+    resp = sase_session.post.bgppeers(site_id=site_id, element_id=element_id, data=core_data)
     if resp.cgx_status:
         print("\t\tCore Peer created")
     else:
@@ -1378,6 +1498,11 @@ def create_bgp_peer(sase_session, site_id, element_id):
 
 
 def create_bgp_peer_branch(sase_session, site_id, element_id):
+    ##############################################################################
+    # Set Global BGP Config
+    # Use AS_NUM 65111 for Branch
+    ##############################################################################
+    update_bgpconfigs(sase_session=sase_session, site_id=site_id, element_id=element_id, as_num=BRANCH_AS_NUM)
     ##############################################################################
     # WAN-Rtr Peer
     ##############################################################################
@@ -1402,7 +1527,7 @@ def create_bgp_peer_branch(sase_session, site_id, element_id):
         "router_id": None,
         "advertise_default_route": False
     }
-    resp = sase_session.post.bgppeers(site_id=site_id, elementshell_id=element_id, data=wanrtr_data)
+    resp = sase_session.post.bgppeers(site_id=site_id, element_id=element_id, data=wanrtr_data)
     if resp.cgx_status:
         print("\t\tWAN-Rtr created")
     else:
@@ -1433,7 +1558,7 @@ def create_bgp_peer_branch(sase_session, site_id, element_id):
         "router_id": None,
         "advertise_default_route": False
     }
-    resp = sase_session.post.bgppeers(site_id=site_id, elementshell_id=element_id, data=lanrtr_data)
+    resp = sase_session.post.bgppeers(site_id=site_id, element_id=element_id, data=lanrtr_data)
     if resp.cgx_status:
         print("\t\tLAN-Rtr created")
     else:
@@ -1528,9 +1653,10 @@ def configure_byos(sase_session, dc_site_id, dc_type):
     resp = sase_session.post.elementshells(site_id=dc_site_id, data=shell_data)
     if resp.cgx_status:
         print("\tElement Shell created for DC-ION-1")
-        dc_elem1_id = resp.cgx_content.get("id", None)
+        dc_elemshell1_id = resp.cgx_content.get("id", None)
+        dc_elem1_id = resp.cgx_content.get("element_id", None)
 
-        resp = sase_session.get.elementshells_interfaces(site_id=dc_site_id, elementshell_id=dc_elem1_id)
+        resp = sase_session.get.elementshells_interfaces(site_id=dc_site_id, elementshell_id=dc_elemshell1_id)
         if resp.cgx_status:
             intflist = resp.cgx_content.get("items", None)
             for intf in intflist:
@@ -1539,7 +1665,7 @@ def configure_byos(sase_session, dc_site_id, dc_type):
                     intf["ipv4_config"] = IPV4_TEMPLATE_DHCP
 
                     resp = sase_session.put.elementshells_interfaces(site_id=dc_site_id,
-                                                                     elementshell_id=dc_elem1_id,
+                                                                     elementshell_id=dc_elemshell1_id,
                                                                      interface_id=intf["id"],
                                                                      data=intf)
                     if resp.cgx_status:
@@ -1553,7 +1679,7 @@ def configure_byos(sase_session, dc_site_id, dc_type):
                     intf["ipv4_config"] = IPV4_TEMPLATE_DHCP
                     intf["used_for"] = "private"
                     resp = sase_session.put.elementshells_interfaces(site_id=dc_site_id,
-                                                                     elementshell_id=dc_elem1_id,
+                                                                     elementshell_id=dc_elemshell1_id,
                                                                      interface_id=intf["id"],
                                                                      data=intf)
                     if resp.cgx_status:
@@ -1568,7 +1694,7 @@ def configure_byos(sase_session, dc_site_id, dc_type):
                     intf["used_for"] = "public"
                     intf["site_wan_interface_ids"] = [DC_INTERNET_CIRCUITID]
                     resp = sase_session.put.elementshells_interfaces(site_id=dc_site_id,
-                                                                     elementshell_id=dc_elem1_id,
+                                                                     elementshell_id=dc_elemshell1_id,
                                                                      interface_id=intf["id"],
                                                                      data=intf)
                     if resp.cgx_status:
@@ -1583,7 +1709,7 @@ def configure_byos(sase_session, dc_site_id, dc_type):
                     intf["used_for"] = "private"
                     intf["site_wan_interface_ids"] = [DC_MPLS_CIRCUITID]
                     resp = sase_session.put.elementshells_interfaces(site_id=dc_site_id,
-                                                                     elementshell_id=dc_elem1_id,
+                                                                     elementshell_id=dc_elemshell1_id,
                                                                      interface_id=intf["id"],
                                                                      data=intf)
                     if resp.cgx_status:
@@ -1614,9 +1740,10 @@ def configure_byos(sase_session, dc_site_id, dc_type):
     resp = sase_session.post.elementshells(site_id=dc_site_id, data=shell_data)
     if resp.cgx_status:
         print("\tElement Shell created for DC-ION-2")
-        dc_elem2_id = resp.cgx_content.get("id", None)
+        dc_elemshell2_id = resp.cgx_content.get("id", None)
+        dc_elem2_id = resp.cgx_content.get("element_id", None)
 
-        resp = sase_session.get.elementshells_interfaces(site_id=dc_site_id, elementshell_id=dc_elem2_id)
+        resp = sase_session.get.elementshells_interfaces(site_id=dc_site_id, elementshell_id=dc_elemshell2_id)
         if resp.cgx_status:
             intflist = resp.cgx_content.get("items", None)
             for intf in intflist:
@@ -1625,7 +1752,7 @@ def configure_byos(sase_session, dc_site_id, dc_type):
                     intf["ipv4_config"] = IPV4_TEMPLATE_DHCP
 
                     resp = sase_session.put.elementshells_interfaces(site_id=dc_site_id,
-                                                                     elementshell_id=dc_elem2_id,
+                                                                     elementshell_id=dc_elemshell2_id,
                                                                      interface_id=intf["id"],
                                                                      data=intf)
                     if resp.cgx_status:
@@ -1639,7 +1766,7 @@ def configure_byos(sase_session, dc_site_id, dc_type):
                     intf["ipv4_config"] = IPV4_TEMPLATE_DHCP
                     intf["used_for"] = "private"
                     resp = sase_session.put.elementshells_interfaces(site_id=dc_site_id,
-                                                                     elementshell_id=dc_elem2_id,
+                                                                     elementshell_id=dc_elemshell2_id,
                                                                      interface_id=intf["id"],
                                                                      data=intf)
                     if resp.cgx_status:
@@ -1654,7 +1781,7 @@ def configure_byos(sase_session, dc_site_id, dc_type):
                     intf["used_for"] = "public"
                     intf["site_wan_interface_ids"] = [DC_INTERNET_CIRCUITID]
                     resp = sase_session.put.elementshells_interfaces(site_id=dc_site_id,
-                                                                     elementshell_id=dc_elem2_id,
+                                                                     elementshell_id=dc_elemshell2_id,
                                                                      interface_id=intf["id"],
                                                                      data=intf)
                     if resp.cgx_status:
@@ -1669,7 +1796,7 @@ def configure_byos(sase_session, dc_site_id, dc_type):
                     intf["used_for"] = "private"
                     intf["site_wan_interface_ids"] = [DC_MPLS_CIRCUITID]
                     resp = sase_session.put.elementshells_interfaces(site_id=dc_site_id,
-                                                                     elementshell_id=dc_elem2_id,
+                                                                     elementshell_id=dc_elemshell2_id,
                                                                      interface_id=intf["id"],
                                                                      data=intf)
                     if resp.cgx_status:
@@ -1797,9 +1924,10 @@ def configure_byos(sase_session, dc_site_id, dc_type):
             resp = sase_session.post.elementshells(site_id=dc2_site_id, data=shell_data)
             if resp.cgx_status:
                 print("\tElement Shell created for DC2-ION-1")
-                dc2_elem1_id = resp.cgx_content.get("id", None)
+                dc2_elemshell1_id = resp.cgx_content.get("id", None)
+                dc2_elem1_id = resp.cgx_content.get("element_id", None)
 
-                resp = sase_session.get.elementshells_interfaces(site_id=dc2_site_id, elementshell_id=dc2_elem1_id)
+                resp = sase_session.get.elementshells_interfaces(site_id=dc2_site_id, elementshell_id=dc2_elemshell1_id)
                 if resp.cgx_status:
                     intflist = resp.cgx_content.get("items", None)
                     for intf in intflist:
@@ -1808,7 +1936,7 @@ def configure_byos(sase_session, dc_site_id, dc_type):
                             intf["ipv4_config"] = IPV4_TEMPLATE_DHCP
 
                             resp = sase_session.put.elementshells_interfaces(site_id=dc2_site_id,
-                                                                             elementshell_id=dc2_elem1_id,
+                                                                             elementshell_id=dc2_elemshell1_id,
                                                                              interface_id=intf["id"],
                                                                              data=intf)
                             if resp.cgx_status:
@@ -1822,7 +1950,7 @@ def configure_byos(sase_session, dc_site_id, dc_type):
                             intf["ipv4_config"] = IPV4_TEMPLATE_DHCP
                             intf["used_for"] = "private"
                             resp = sase_session.put.elementshells_interfaces(site_id=dc2_site_id,
-                                                                             elementshell_id=dc2_elem1_id,
+                                                                             elementshell_id=dc2_elemshell1_id,
                                                                              interface_id=intf["id"],
                                                                              data=intf)
                             if resp.cgx_status:
@@ -1837,7 +1965,7 @@ def configure_byos(sase_session, dc_site_id, dc_type):
                             intf["used_for"] = "public"
                             intf["site_wan_interface_ids"] = [DC2_INTERNET_CIRCUITID]
                             resp = sase_session.put.elementshells_interfaces(site_id=dc2_site_id,
-                                                                             elementshell_id=dc2_elem1_id,
+                                                                             elementshell_id=dc2_elemshell1_id,
                                                                              interface_id=intf["id"],
                                                                              data=intf)
                             if resp.cgx_status:
@@ -1852,7 +1980,7 @@ def configure_byos(sase_session, dc_site_id, dc_type):
                             intf["used_for"] = "private"
                             intf["site_wan_interface_ids"] = [DC2_MPLS_CIRCUITID]
                             resp = sase_session.put.elementshells_interfaces(site_id=dc2_site_id,
-                                                                             elementshell_id=dc2_elem1_id,
+                                                                             elementshell_id=dc2_elemshell1_id,
                                                                              interface_id=intf["id"],
                                                                              data=intf)
                             if resp.cgx_status:
@@ -1862,7 +1990,7 @@ def configure_byos(sase_session, dc_site_id, dc_type):
                                 prisma_sase.jd_detailed(resp)
 
                 print("\tConfiguring BGP Peer on DC2-ION-1")
-                create_bgp_peer(sase_session=sase_session, site_id=dc_site_id, element_id=dc2_elem1_id)
+                create_bgp_peer(sase_session=sase_session, site_id=dc2_site_id, element_id=dc2_elem1_id)
 
             else:
                 print("ERR: Could not create element shell for DC2 ION 1")
@@ -2409,10 +2537,10 @@ def go():
         ##############################################################################
         if byos:
             print("\tConfiguring BGP Peers on {} ION 1".format(SITE_NAME))
-            create_bgp_peer_branch(sase_session=sase_session, site_id=SITE_ID, element_id=ELEM_SHELL_ID_1)
+            create_bgp_peer_branch(sase_session=sase_session, site_id=SITE_ID, element_id=ELEM_ID_1)
             if HA:
                 print("\tConfiguring BGP Peers on {} ION 2".format(SITE_NAME))
-                create_bgp_peer_branch(sase_session=sase_session, site_id=SITE_ID, element_id=ELEM_SHELL_ID_2)
+                create_bgp_peer_branch(sase_session=sase_session, site_id=SITE_ID, element_id=ELEM_ID_2)
         ##############################################################################
         # Configure Element Shell Interfaces
         ##############################################################################
