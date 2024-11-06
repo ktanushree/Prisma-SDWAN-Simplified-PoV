@@ -3,7 +3,7 @@
 """
 Script to setup Prisma SDWAN Simplified PoV
 Author: tkamath@paloaltonetworks.com
-Version: 1.0.0b11
+Version: 1.0.0b13
 """
 import prisma_sase
 import argparse
@@ -354,7 +354,7 @@ def go():
     ##############################################################################
     # Get DC Site ID
     ##############################################################################
-    DCSites = ["SPoV DC test", "SPoV DC2 test"]
+    DCSites = ["SPoV DC", "BYOS DC1", "BYOS DC2"]
     for dcsite in DCSites:
         if dcsite in site_name_id.keys():
             dcsite_id = site_name_id[dcsite]

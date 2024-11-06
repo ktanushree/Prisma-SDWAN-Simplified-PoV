@@ -3,7 +3,7 @@
 """
 Script to setup Prisma SDWAN Simplified PoV using a CSV
 Author: tkamath@paloaltonetworks.com
-Version: 1.0.0b11
+Version: 1.0.0b13
 """
 import prisma_sase
 import argparse
@@ -753,7 +753,7 @@ def create_dicts(sase_session):
 
                 if CUSTOMER_NAME not in item["name"]:
                     #newname = "{}{}".format(CUSTOMER_NAME, item["name"])
-                    newname = "{} Default Path Stack (Simple)".format(CUSTOMER_NAME)
+                    newname = "{} Path (Simple)".format(CUSTOMER_NAME)
 
                     item["name"] = newname
                     resp = sase_session.put.networkpolicysetstacks(networkpolicysetstack_id=item["id"], data=item)
@@ -777,9 +777,9 @@ def create_dicts(sase_session):
         for ps in policysets:
             if CUSTOMER_NAME not in ps["name"]:
                 if ps["defaultrule_policyset"]:
-                    newname = "{} Default Path Set (Simple)".format(CUSTOMER_NAME)
+                    newname = "{} Path Default Rule Policy Set (Simple)".format(CUSTOMER_NAME)
                 else:
-                    newname = "{} Path Set (Simple)".format(CUSTOMER_NAME)
+                    newname = "{} Path Policy Set (Simple)".format(CUSTOMER_NAME)
 
                 ps["name"]=newname
                 resp = sase_session.put.networkpolicysets(networkpolicyset_id=ps["id"], data=ps)
@@ -805,7 +805,7 @@ def create_dicts(sase_session):
 
                 if CUSTOMER_NAME not in item["name"]:
                     #newname = "{}{}".format(CUSTOMER_NAME, item["name"])
-                    newname = "{} Default QoS Stack (Simple)".format(CUSTOMER_NAME)
+                    newname = "{} QoS (Simple)".format(CUSTOMER_NAME)
 
                     item["name"] = newname
                     resp = sase_session.put.prioritypolicysetstacks(prioritypolicysetstack_id=item["id"], data=item)
@@ -828,9 +828,9 @@ def create_dicts(sase_session):
         for ps in policysets:
             if CUSTOMER_NAME not in ps["name"]:
                 if ps["defaultrule_policyset"]:
-                    newname = "{} Default QoS Set (Simple)".format(CUSTOMER_NAME)
+                    newname = "{} QoS Default Rule Policy Set (Simple)".format(CUSTOMER_NAME)
                 else:
-                    newname = "{} QoS Set (Simple)".format(CUSTOMER_NAME)
+                    newname = "{} QoS Policy Set (Simple)".format(CUSTOMER_NAME)
 
                 ps["name"] = newname
                 resp = sase_session.put.prioritypolicysets(prioritypolicyset_id=ps["id"], data=ps)
@@ -855,8 +855,7 @@ def create_dicts(sase_session):
                 NATSTACKID=item["id"]
 
                 if CUSTOMER_NAME not in item["name"]:
-                    #newname = "{}{}".format(CUSTOMER_NAME, item["name"])
-                    newname = "{} Default NAT Stack (Simple)".format(CUSTOMER_NAME)
+                    newname = "{} NAT (Simple)".format(CUSTOMER_NAME)
 
                     item["name"] = newname
                     resp = sase_session.put.natpolicysetstacks(natpolicysetstack_id=item["id"], data=item)
@@ -880,7 +879,8 @@ def create_dicts(sase_session):
         policysets = resp.cgx_content.get("items", None)
         for ps in policysets:
             if CUSTOMER_NAME not in ps["name"]:
-                newname = "{} NAT Set (Simple)".format(CUSTOMER_NAME)
+                newname = "{} NAT Policy Set (Simple)".format(CUSTOMER_NAME)
+
                 ps["name"] = newname
                 resp = sase_session.put.natpolicysets(natpolicyset_id=ps["id"], data=ps)
                 if resp.cgx_status:
@@ -944,9 +944,22 @@ def create_dicts(sase_session):
         print("\t\tBranch Simple Security Policy Stack Default Rule Policy Set (Simple) already created")
         defpol_id = secset_name_id["Branch Simple Security Policy Stack Default Rule Policy Set (Simple)"]
 
+        resp = sase_session.get.ngfwsecuritypolicysets(ngfwsecuritypolicyset_id=defpol_id)
+        if resp.cgx_status:
+            data = resp.cgx_content
+            data["name"] = "{} Security Default Rule Policy Set (Simple)".format(CUSTOMER_NAME)
+            resp = sase_session.put.ngfwsecuritypolicysets(ngfwsecuritypolicyset_id=defpol_id, data=data)
+            if resp.cgx_status:
+                print("\t\tBranch Simple Security Policy Stack Default Rule Policy Set (Simple) updated to {}".format(data["name"]))
+                secset_name_id[data["name"]] = defpol_id
+            else:
+                print("ERR: Could not edit Policy Set name for Branch Simple Security Policy Stack Default Rule Policy Set (Simple)")
+                prisma_sase.jd_detailed(resp)
+
     else:
+        newname = "{} Security Default Rule Policy Set (Simple)".format(CUSTOMER_NAME)
         data = {
-            "name": "Branch Simple Security Policy Stack Default Rule Policy Set (Simple)",
+            "name": newname,
             "description": None,
             "tags": None,
             "defaultrule_policyset": True,
@@ -955,19 +968,34 @@ def create_dicts(sase_session):
         }
         resp = sase_session.post.ngfwsecuritypolicysets(data=data)
         if resp.cgx_status:
-            print("\t\tBranch Simple Security Policy Stack Default Rule Policy Set (Simple) policy set created")
+            print("\t\t {} policy set created".format(newname))
             defpol_id = resp.cgx_content.get("id")
         else:
-            print("ERR: Could not create Branch Simple Security Policy Stack Default Rule Policy Set (Simple)")
+            print("ERR: Could not create {}".format(newname))
             prisma_sase.jd_detailed(resp)
+
 
     if "Branch Simple Security Policy Stack Policy Set (Simple)" in secset_name_id.keys():
         print("\tBranch Simple Security Policy Stack Policy Set (Simple) already created")
         NGFWPOLICYSETID = secset_name_id["Branch Simple Security Policy Stack Policy Set (Simple)"]
 
+        resp = sase_session.get.ngfwsecuritypolicysets(ngfwsecuritypolicyset_id=NGFWPOLICYSETID)
+        if resp.cgx_status:
+            data = resp.cgx_content
+            data["name"] = "{} Security Policy Set (Simple)".format(CUSTOMER_NAME)
+            resp = sase_session.put.ngfwsecuritypolicysets(ngfwsecuritypolicyset_id=NGFWPOLICYSETID, data=data)
+            if resp.cgx_status:
+                print("\t\tBranch Simple Security Policy Stack Policy Set (Simple) updated to {}".format(data["name"]))
+                secset_name_id[data["name"]] = NGFWPOLICYSETID
+
+            else:
+                print("ERR: Could not edit Policy Set name for Branch Simple Security Policy Stack Policy Set (Simple)")
+                prisma_sase.jd_detailed(resp)
+
     else:
+        newname = "{} Security Policy Set (Simple)".format(CUSTOMER_NAME)
         data = {
-            "name": "Branch Simple Security Policy Stack Policy Set (Simple)",
+            "name": newname,
             "description": None,
             "tags": None,
             "defaultrule_policyset": False,
@@ -977,10 +1005,10 @@ def create_dicts(sase_session):
 
         resp = sase_session.post.ngfwsecuritypolicysets(data=data)
         if resp.cgx_status:
-            print("\tBranch Simple Security Policy Stack Policy Set (Simple) policy set created")
+            print("\t{}policy set created".format(newname))
             NGFWPOLICYSETID = resp.cgx_content.get("id")
         else:
-            print("ERR: Could not create Branch Simple Security Policy Stack Policy Set (Simple)")
+            print("ERR: Could not create {}".format(newname))
             prisma_sase.jd_detailed(resp)
 
     if defpol_id is None or NGFWPOLICYSETID is None:
@@ -998,7 +1026,7 @@ def create_dicts(sase_session):
         print("ERR: Could not retrieve Security Stack")
         prisma_sase.jd_detailed(resp)
 
-    newname = "{} Security Stack (Simple)".format(CUSTOMER_NAME)
+    newname = "{} Security (Simple)".format(CUSTOMER_NAME)
     if "Branch Simple Security Policy Stack (Simple)" in secstack_name_id.keys():
         print("\tBranch Simple Security Policy Stack (Simple) already exists")
         NGFWSTACKID=secstack_name_id["Branch Simple Security Policy Stack (Simple)"]
@@ -1018,8 +1046,8 @@ def create_dicts(sase_session):
     elif newname in secstack_name_id.keys():
         NGFWSTACKID = secstack_name_id[newname]
 
-    elif "Security Stack (Simple)" in secstack_name_id.keys():
-        NGFWSTACKID = secstack_name_id["Security Stack (Simple)"]
+    elif "Security (Simple)" in secstack_name_id.keys():
+        NGFWSTACKID = secstack_name_id["Security (Simple)"]
         resp = sase_session.get.ngfwsecuritypolicysetstacks(ngfwsecuritypolicysetstack_id=NGFWSTACKID)
         if resp.cgx_status:
             item = resp.cgx_content
@@ -1033,8 +1061,7 @@ def create_dicts(sase_session):
                 prisma_sase.jd_detailed(resp)
 
     else:
-        #name = "{}Branch Simple Security Policy Stack (Simple)".format(CUSTOMER_NAME)
-        name = "{} Security Stack (Simple)".format(CUSTOMER_NAME)
+        name = "{} Security (Simple)".format(CUSTOMER_NAME)
         data = {
             "name": newname,
             "description": None,
@@ -1044,10 +1071,10 @@ def create_dicts(sase_session):
         }
         resp = sase_session.post.ngfwsecuritypolicysetstacks(data=data)
         if resp.cgx_status:
-            print("\tBranch Simple Security Policy Stack (Simple) created")
+            print("\t{} created".format(newname))
             NGFWSTACKID = resp.cgx_content.get("id")
         else:
-            print("ERR: Could not create Branch Simple Security Policy Stack (Simple) created")
+            print("ERR: Could not create {}".format(newname))
             prisma_sase.jd_detailed(resp)
 
     #
@@ -1541,7 +1568,7 @@ def create_bgp_peer_branch(sase_session, site_id, element_id):
         "name": "LAN-Rtr",
         "description": None,
         "tags": None,
-        "peer_ip": "192.168.11.10",
+        "peer_ip": "192.168.11.1",
         "peer_ip_v6": None,
         "allow_v4_prefixes": True,
         "allow_v6_prefixes": False,
@@ -1581,7 +1608,7 @@ def configure_byos(sase_session, dc_site_id, dc_type):
     ##############################################################################
     # Create SWIs - Public Circuits
     ##############################################################################
-    print("SPoV DC")
+    print("BYoS DC")
     DC_INTERNET_CIRCUITID = None
     priint_data = copy.deepcopy(SWI_TEMPLATE)
     priint_data["name"] = "DC1 ISP Circuit"
@@ -1817,7 +1844,7 @@ def configure_byos(sase_session, dc_site_id, dc_type):
     ##############################################################################
     if dc_type == "DC2":
         dc_data = {
-            "name": "SPoV DC2 test",
+            "name": "BYOS DC2",
             "description": "Auto-created DC site for Simplified PoV",
             "address": {
                 "street": "",
@@ -1848,7 +1875,7 @@ def configure_byos(sase_session, dc_site_id, dc_type):
         }
         resp = sase_session.post.sites(data=dc_data)
         if resp.cgx_status:
-            print("SPoV DC2 created")
+            print("BYOS DC2 created")
             dc2_site_id = resp.cgx_content.get("id", None)
 
             ##############################################################################
@@ -2979,15 +3006,56 @@ def go():
                 else:
                     print("\t\tGUEST zone not bound. No mapping interface!")
 
-            ##############################################################################
-            # Bind Zones to Interface: LAN
-            ##############################################################################
+        ##############################################################################
+        # Bind Zones to Interface: LAN
+        ##############################################################################
+        ###############################################################################
+        # ION 1
+        ###############################################################################
+        lan_interface_ids = []
+        lan_interface_names = []
+        resp = sase_session.get.interfaces(site_id=SITE_ID, element_id=ELEM_ID_1)
+        if resp.cgx_status:
+            interfaces = resp.cgx_content.get("items", None)
+            for intf in interfaces:
+                if intf["description"] in ["DATA", "VOICE"]:
+                    lan_interface_ids.append(intf["id"])
+                    lan_interface_names.append(intf["name"])
+
+                if intf["name"] == LAN_INTERFACE:
+                    lan_interface_ids.append(intf["id"])
+                    lan_interface_names.append(intf["name"])
+
+        else:
+            print("ERR: Could not retrieve interfaces")
+            prisma_sase.jd_detailed(resp)
+
+        print("\tBinding Zone: LAN")
+        if len(lan_interface_ids) > 0:
+            zone_data = {
+                "zone_id": zone_name_id["lan"],
+                "lannetwork_ids": [],
+                "interface_ids": lan_interface_ids,
+                "wanoverlay_ids": [],
+                "waninterface_ids": []
+            }
+
+            resp = sase_session.post.elementsecurityzones(site_id=SITE_ID, element_id=ELEM_ID_1, data=zone_data)
+            if resp.cgx_status:
+                print("\t\tLAN bound to interface {} on ION 1".format(lan_interface_names))
+            else:
+                print("ERR: Could not bind LAN to interface {} on ION 1".format(lan_interface_names))
+                prisma_sase.jd_detailed(resp)
+        else:
+            print("\t\tLAN zone not bound. No mapping interface!")
+
+        if HA:
             ###############################################################################
-            # ION 1
+            # ION 2
             ###############################################################################
             lan_interface_ids = []
             lan_interface_names = []
-            resp = sase_session.get.interfaces(site_id=SITE_ID, element_id=ELEM_ID_1)
+            resp = sase_session.get.interfaces(site_id=SITE_ID, element_id=ELEM_ID_2)
             if resp.cgx_status:
                 interfaces = resp.cgx_content.get("items", None)
                 for intf in interfaces:
@@ -3003,7 +3071,6 @@ def go():
                 print("ERR: Could not retrieve interfaces")
                 prisma_sase.jd_detailed(resp)
 
-            print("\tBinding Zone: LAN")
             if len(lan_interface_ids) > 0:
                 zone_data = {
                     "zone_id": zone_name_id["lan"],
@@ -3012,54 +3079,14 @@ def go():
                     "wanoverlay_ids": [],
                     "waninterface_ids": []
                 }
-
-                resp = sase_session.post.elementsecurityzones(site_id=SITE_ID, element_id=ELEM_ID_1, data=zone_data)
+                resp = sase_session.post.elementsecurityzones(site_id=SITE_ID, element_id=ELEM_ID_2, data=zone_data)
                 if resp.cgx_status:
-                    print("\t\tLAN bound to interface {} on ION 1".format(lan_interface_names))
+                    print("\t\tLAN bound to interface {} on ION 2".format(lan_interface_names))
                 else:
-                    print("ERR: Could not bind LAN to interface {} on ION 1".format(lan_interface_names))
+                    print("ERR: Could not bind LAN to interface {} on ION 2".format(lan_interface_names))
                     prisma_sase.jd_detailed(resp)
             else:
                 print("\t\tLAN zone not bound. No mapping interface!")
-
-            if HA:
-                ###############################################################################
-                # ION 2
-                ###############################################################################
-                lan_interface_ids = []
-                lan_interface_names = []
-                resp = sase_session.get.interfaces(site_id=SITE_ID, element_id=ELEM_ID_2)
-                if resp.cgx_status:
-                    interfaces = resp.cgx_content.get("items", None)
-                    for intf in interfaces:
-                        if intf["description"] in ["DATA", "VOICE"]:
-                            lan_interface_ids.append(intf["id"])
-                            lan_interface_names.append(intf["name"])
-
-                        if intf["name"] == LAN_INTERFACE:
-                            lan_interface_ids.append(intf["id"])
-                            lan_interface_names.append(intf["name"])
-
-                else:
-                    print("ERR: Could not retrieve interfaces")
-                    prisma_sase.jd_detailed(resp)
-
-                if len(lan_interface_ids) > 0:
-                    zone_data = {
-                        "zone_id": zone_name_id["lan"],
-                        "lannetwork_ids": [],
-                        "interface_ids": lan_interface_ids,
-                        "wanoverlay_ids": [],
-                        "waninterface_ids": []
-                    }
-                    resp = sase_session.post.elementsecurityzones(site_id=SITE_ID, element_id=ELEM_ID_2, data=zone_data)
-                    if resp.cgx_status:
-                        print("\t\tLAN bound to interface {} on ION 2".format(lan_interface_names))
-                    else:
-                        print("ERR: Could not bind LAN to interface {} on ION 2".format(lan_interface_names))
-                        prisma_sase.jd_detailed(resp)
-                else:
-                    print("\t\tLAN zone not bound. No mapping interface!")
 
         ##############################################################################
         # Create Spoke Cluster
@@ -3151,13 +3178,17 @@ def go():
     #
     ##############################################################################
     DC_SITE_ID=None
-    if "SPoV DC test" in site_name_id.keys():
-        print("DC Site SPoV DC already exists")
-        DC_SITE_ID = site_name_id["SPoV DC test"]
+    dcname = "SPoV DC"
+    if byos:
+        dcname = "BYOS DC1"
+
+    if dcname in site_name_id.keys():
+        print("DC Site {} already exists".format(dcname))
+        DC_SITE_ID = site_name_id[dcname]
     else:
         print("Creating DC Site + Service Binding")
         dc_data = {
-            "name": "SPoV DC test",
+            "name": dcname,
             "description": "Auto-created DC site for Simplified PoV",
             "address": {
                 "street": "",
@@ -3188,10 +3219,10 @@ def go():
         }
         resp = sase_session.post.sites(data=dc_data)
         if resp.cgx_status:
-            print("\tSPoV DC created")
+            print("\t{} created".format(dcname))
             DC_SITE_ID=resp.cgx_content.get("id", None)
         else:
-            print("ERR: Could not create DC Site")
+            print("ERR: Could not create DC Site {}".format(dcname))
             prisma_sase.jd_detailed(resp)
     ##############################################################################
     # Retrieve Existing Service Label Configuration
@@ -3241,13 +3272,13 @@ def go():
         print("ERR: Could not retrieve service endpoints")
         prisma_sase.jd_detailed(resp)
 
-    if "SPoV DC" in serviceendpoints_name_id.keys():
-        print("\tService Endpoint SPoV DC already exists")
-        serviceendpoint_id = serviceendpoints_name_id["SPoV DC"]
+    if dcname in serviceendpoints_name_id.keys():
+        print("\tService Endpoint {} already exists".format(dcname))
+        serviceendpoint_id = serviceendpoints_name_id[dcname]
 
     else:
         data = {
-            "name": "SPoV DC",
+            "name": dcname,
             "description": None,
             "tags": None,
             "type": "cg-transit",
@@ -3274,10 +3305,10 @@ def go():
         serviceendpoint_id = None
         resp = sase_session.post.serviceendpoints(data=data)
         if resp.cgx_status:
-            print("\tService Endpoint SpoV DC created")
+            print("\tService Endpoint {} created".format(dcname))
             serviceendpoint_id = resp.cgx_content.get("id")
         else:
-            print("ERR: Could not create service endpoint")
+            print("ERR: Could not create service endpoint {}".format(dcname))
             prisma_sase.jd_detailed(resp)
 
     ##############################################################################

@@ -100,7 +100,9 @@ Config:
 ## Version
 | Version | Build | Changes |
 | ------- | ----- | ------- |
-| **1.0.0** | **b11** | Bug fixes, updated policy set names with Customer name, updated cleanup to rename sets |
+| **1.0.0** | **b13** | Fixed naming convention for policies, LAN zone binding and DC naming convention |
+|           | **b12** | Updated LAN-Rtr IP for BYOS |
+|           | **b11** | Bug fixes, updated policy set names with Customer name, updated cleanup to rename sets |
 |           | **b10** | Bug fixes, Support for 7108v, Updated Policy Stack naming convention |
 |           | **b9** | Bug fixes, BYOS: BGP peers for DC & Branch |
 |           | **b8** | Bug fixes, BYOS DC set to active |
