@@ -3,7 +3,7 @@
 """
 Script to setup Prisma SDWAN Simplified PoV
 Author: tkamath@paloaltonetworks.com
-Version: 1.0.0b13
+Version: 1.0.0b14
 """
 import prisma_sase
 import argparse
@@ -99,6 +99,233 @@ def go():
     create_dicts(sase_session)
     customer_name = "{} ".format(customer_name)
 
+    if policy_only != "True":
+        ##############################################################################
+        # Delete Site
+        ##############################################################################
+        if site_name not in site_name_id.keys():
+            print("ERR: Site {} not found. Please select a valid site to cleanup".format(site_name))
+
+        else:
+            site_id=site_name_id[site_name]
+
+            #
+            # Cleanup Steps:
+            # 1. Delete Element
+            # 2. Delete SWIs from Site
+            # 3. Disable Site
+            # 4. Delete Site
+            #
+
+            ##############################################################################
+            # Delete Element Shell
+            ##############################################################################
+            data = {
+                "query_params": {
+                    "site_id": {"in": [site_id]}
+                }
+            }
+            resp = sase_session.post.elementshells_query(data=data)
+            if resp.cgx_status:
+                elementshells = resp.cgx_content.get("items", None)
+                print("Num Shells at Site: {}".format(len(elementshells)))
+
+                for elemshell in elementshells:
+                    resp = sase_session.delete.elementshells(site_id=site_id, elementshell_id=elemshell["id"])
+                    if resp.cgx_status:
+                        print("Element Shell: {} deleted".format(elemshell["name"]))
+                    else:
+                        print("ERR: Could not delete Element Shell: {}".format(elemshell["name"]))
+                        prisma_sase.jd_detailed(resp)
+
+            else:
+                print("ERR: Could not retrieve Element Shells")
+                prisma_sase.jd_detailed(resp)
+
+
+            ##############################################################################
+            # Delete SWIs at Site
+            ##############################################################################
+
+            resp = sase_session.get.waninterfaces(site_id=site_id)
+            if resp.cgx_status:
+                waninterfaces = resp.cgx_content.get("items", None)
+                for swi in waninterfaces:
+                    resp = sase_session.delete.waninterfaces(site_id=site_id, waninterface_id=swi["id"])
+                    if resp.cgx_status:
+                        print("WAN Interface: {} deleted".format(swi["name"]))
+                    else:
+                        print("ERR: Could not delete WAN Interface: {}".format(swi["name"]))
+                        prisma_sase.jd_detailed(resp)
+            else:
+                print("ERR: Could not retrieve WAN Interfaces")
+                prisma_sase.jd_detailed(resp)
+
+
+            ##############################################################################
+            # Disable Site
+            ##############################################################################
+            resp = sase_session.get.sites(site_id=site_id)
+            if resp.cgx_status:
+                siteobj = resp.cgx_content
+                siteobj["admin_state"] = "disabled"
+                resp = sase_session.put.sites(site_id=site_id, data=siteobj)
+                if resp.cgx_status:
+                    print("Site {} Disabled".format(site_name))
+                else:
+                    print("ERR: Could not disable Site {}".format(site_name))
+                    prisma_sase.jd_detailed(resp)
+            else:
+                print("ERR: Could not retrieve site {}".format(site_name))
+                prisma_sase.jd_detailed(resp)
+
+            ##############################################################################
+            # Delete Site
+            ##############################################################################
+            resp = sase_session.delete.sites(site_id=site_id)
+            if resp.cgx_status:
+                print("Site {} Deleted!".format(site_name))
+            else:
+                print("ERR: Could not delete Site {}".format(site_name))
+                prisma_sase.jd_detailed(resp)
+
+        ##############################################################################
+        # Get DC Site ID
+        ##############################################################################
+        DCSites = ["SPoV DC", "BYOS DC1", "BYOS DC2"]
+        for dcsite in DCSites:
+            if dcsite in site_name_id.keys():
+                dcsite_id = site_name_id[dcsite]
+
+                ##############################################################################
+                # Delete Element Shell
+                ##############################################################################
+                data = {
+                    "query_params": {
+                        "site_id": {"in": [dcsite_id]}
+                    }
+                }
+                resp = sase_session.post.elementshells_query(data=data)
+                if resp.cgx_status:
+                    elementshells = resp.cgx_content.get("items", None)
+                    print("Num Shells at Site: {}".format(len(elementshells)))
+
+                    for elemshell in elementshells:
+                        resp = sase_session.delete.elementshells(site_id=dcsite_id, elementshell_id=elemshell["id"])
+                        if resp.cgx_status:
+                            print("Element Shell: {} deleted".format(elemshell["name"]))
+                        else:
+                            print("ERR: Could not delete Element Shell: {}".format(elemshell["name"]))
+                            prisma_sase.jd_detailed(resp)
+
+                else:
+                    print("ERR: Could not retrieve Element Shells")
+                    prisma_sase.jd_detailed(resp)
+
+                ##############################################################################
+                # Delete SWIs at Site
+                ##############################################################################
+                resp = sase_session.get.waninterfaces(site_id=dcsite_id)
+                if resp.cgx_status:
+                    waninterfaces = resp.cgx_content.get("items", None)
+                    for swi in waninterfaces:
+                        resp = sase_session.delete.waninterfaces(site_id=dcsite_id, waninterface_id=swi["id"])
+                        if resp.cgx_status:
+                            print("WAN Interface: {} deleted".format(swi["name"]))
+                        else:
+                            print("ERR: Could not delete WAN Interface: {}".format(swi["name"]))
+                            prisma_sase.jd_detailed(resp)
+                else:
+                    print("ERR: Could not retrieve WAN Interfaces")
+                    prisma_sase.jd_detailed(resp)
+                ##############################################################################
+                # Delete Servicebinding
+                ##############################################################################
+                resp = sase_session.get.servicebindingmaps()
+                if resp.cgx_status:
+                    smaps = resp.cgx_content.get("items", None)
+                    for smap in smaps:
+                        smap["service_bindings"] = []
+                        resp = sase_session.put.servicebindingmaps(servicebindingmap_id=smap["id"], data=smap)
+                        if resp.cgx_status:
+                            print("Servicebinding removed from {}".format(smap["name"]))
+
+                            resp = sase_session.delete.servicebindingmaps(servicebindingmap_id=smap["id"])
+                            if resp.cgx_status:
+                                print("Preset Domain deleted")
+                            else:
+                                print("ERR: Could not delete Preset Domain")
+                                prisma_sase.jd_detailed(resp)
+                        else:
+                            print("ERR: Could not update Preset Domain")
+                            prisma_sase.jd_detailed(resp)
+                else:
+                    print("ERR: Could not get servicebindingmaps")
+                    prisma_sase.jd_detailed(resp)
+                ##############################################################################
+                # Delete Service Endpoint
+                ##############################################################################
+                resp = sase_session.get.serviceendpoints()
+                if resp.cgx_status:
+                    itemlist = resp.cgx_content.get("items", None)
+                    for item in itemlist:
+                        if item["site_id"] == dcsite_id:
+                            resp = sase_session.delete.serviceendpoints(serviceendpoint_id=item["id"])
+                            if resp.cgx_status:
+                                print("Serviceendpoint deleted")
+                            else:
+                                print("ERR: Could not delete serviceendpoints")
+                                prisma_sase.jd_detailed(resp)
+                else:
+                    print("ERR: Could not get serviceendpoints")
+                    prisma_sase.jd_detailed(resp)
+                ##############################################################################
+                # Disable DC Site
+                ##############################################################################
+                resp = sase_session.get.sites(site_id=dcsite_id)
+                if resp.cgx_status:
+                    siteobj = resp.cgx_content
+                    siteobj["admin_state"] = "disabled"
+                    resp = sase_session.put.sites(site_id=dcsite_id, data=siteobj)
+                    if resp.cgx_status:
+                        print("Site {} Disabled".format(dcsite))
+                    else:
+                        print("ERR: Could not disable Site {}".format(dcsite))
+                        prisma_sase.jd_detailed(resp)
+                else:
+                    print("ERR: Could not retrieve site {}".format(dcsite))
+                    prisma_sase.jd_detailed(resp)
+                ##############################################################################
+                # Delete DC Site
+                ##############################################################################
+                resp = sase_session.delete.sites(site_id=dcsite_id)
+                if resp.cgx_status:
+                    print("Site {} Deleted!".format(dcsite))
+                else:
+                    print("ERR: Could not delete Site {}".format(dcsite))
+                    prisma_sase.jd_detailed(resp)
+
+            else:
+                print("DC Site {} not found".format(dcsite))
+
+        ##############################################################################
+        # Delete WAN Networks
+        ##############################################################################
+        print("Deleting WAN Networks")
+        resp = sase_session.get.wannetworks()
+        if resp.cgx_status:
+            itemlist = resp.cgx_content.get("items", None)
+            for item in itemlist:
+                resp = sase_session.delete.wannetworks(wannetwork_id=item["id"])
+                if resp.cgx_status:
+                    print("\t{} Deleted".format(item["name"]))
+                else:
+                    print("\t{} Could not be deleted".format(item["name"]))
+        else:
+            print("ERR: Could not retrieve WAN Networks")
+            prisma_sase.jd_detailed(resp)
+
+    
     ##############################################################################
     # Reset NW Stack Name
     ##############################################################################
@@ -217,6 +444,43 @@ def go():
     else:
         print("ERR: Could not retrieve NAT Sets")
         prisma_sase.jd_detailed(resp)
+
+    ##############################################################################
+    # Perf Mgmt Stack
+    ##############################################################################
+    resp = sase_session.get.perfmgmtpolicysetstacks()
+    if resp.cgx_status:
+        itemlist = resp.cgx_content.get("items", None)
+        for item in itemlist:
+            if customer_name in item["name"]:
+                resp = sase_session.delete.perfmgmtpolicysetstacks(perfmgmtpolicysetstack_id=item["id"])
+                if resp.cgx_status:
+                    print("Perf Mgmt Stack {} deleted".format(item["name"]))
+                else:
+                    print("ERR: Could not delete Perf Mgmt Stack")
+                    prisma_sase.jd_detailed(resp)
+    else:
+        print("ERR: Could not retrieve Perf Mgmt Stack")
+        prisma_sase.jd_detailed(resp)
+
+    ##############################################################################
+    # Perf Mgmt Set
+    ##############################################################################
+    resp = sase_session.get.perfmgmtpolicysets()
+    if resp.cgx_status:
+        itemlist = resp.cgx_content.get("items", None)
+        for item in itemlist:
+            if customer_name in item["name"]:
+                resp = sase_session.delete.perfmgmtpolicysets(perfmgmtpolicyset_id=item["id"])
+                if resp.cgx_status:
+                    print("Perf Mgmt Set {} deleted".format(item["name"]))
+                else:
+                    print("ERR: Could not delete Perf Mgmt Set")
+                    prisma_sase.jd_detailed(resp)
+    else:
+        print("ERR: Could not retrieve Perf Mgmt Sets")
+        prisma_sase.jd_detailed(resp)
+
     ##############################################################################
     # Reset NGFW Stack Name
     ##############################################################################
@@ -238,254 +502,23 @@ def go():
         prisma_sase.jd_detailed(resp)
 
     ##############################################################################
-    # Reset NAT Set Name
+    # Reset NGFW Set Name
     ##############################################################################
     resp = sase_session.get.ngfwsecuritypolicysets()
     if resp.cgx_status:
         itemlist = resp.cgx_content.get("items", None)
         for item in itemlist:
             if customer_name in item["name"]:
-                name = item["name"].replace(customer_name,"")
-                item["name"] = name
-                resp = sase_session.put.ngfwsecuritypolicysets(ngfwsecuritypolicyset_id=item["id"], data=item)
+                resp = sase_session.delete.ngfwsecuritypolicysets(ngfwsecuritypolicyset_id=item["id"])
                 if resp.cgx_status:
-                    print("NGFW Set name updated to {}".format(item["name"]))
+                    print("NGFW Set {} deleted".format(item["name"]))
                 else:
-                    print("ERR: Could not update NGFW Set name")
+                    print("ERR: Could not delete NGFW Set {}".format(item["name"]))
                     prisma_sase.jd_detailed(resp)
     else:
         print("ERR: Could not retrieve NGFW Sets")
         prisma_sase.jd_detailed(resp)
-
-    ##############################################################################
-    # Check if only policies need to be updates
-    ##############################################################################
-    if policy_only == "True":
-        sys.exit()
-    ##############################################################################
-    # Create Site
-    ##############################################################################
-    if site_name not in site_name_id.keys():
-        print("ERR: Site {} not found. Please select a valid site to cleanup".format(site_name))
-
-    else:
-        site_id=site_name_id[site_name]
-
-        #
-        # Cleanup Steps:
-        # 1. Delete Element
-        # 2. Delete SWIs from Site
-        # 3. Disable Site
-        # 4. Delete Site
-        #
-
-        ##############################################################################
-        # Delete Element Shell
-        ##############################################################################
-        data = {
-            "query_params": {
-                "site_id": {"in": [site_id]}
-            }
-        }
-        resp = sase_session.post.elementshells_query(data=data)
-        if resp.cgx_status:
-            elementshells = resp.cgx_content.get("items", None)
-            print("Num Shells at Site: {}".format(len(elementshells)))
-
-            for elemshell in elementshells:
-                resp = sase_session.delete.elementshells(site_id=site_id, elementshell_id=elemshell["id"])
-                if resp.cgx_status:
-                    print("Element Shell: {} deleted".format(elemshell["name"]))
-                else:
-                    print("ERR: Could not delete Element Shell: {}".format(elemshell["name"]))
-                    prisma_sase.jd_detailed(resp)
-
-        else:
-            print("ERR: Could not retrieve Element Shells")
-            prisma_sase.jd_detailed(resp)
-
-
-        ##############################################################################
-        # Delete SWIs at Site
-        ##############################################################################
-
-        resp = sase_session.get.waninterfaces(site_id=site_id)
-        if resp.cgx_status:
-            waninterfaces = resp.cgx_content.get("items", None)
-            for swi in waninterfaces:
-                resp = sase_session.delete.waninterfaces(site_id=site_id, waninterface_id=swi["id"])
-                if resp.cgx_status:
-                    print("WAN Interface: {} deleted".format(swi["name"]))
-                else:
-                    print("ERR: Could not delete WAN Interface: {}".format(swi["name"]))
-                    prisma_sase.jd_detailed(resp)
-        else:
-            print("ERR: Could not retrieve WAN Interfaces")
-            prisma_sase.jd_detailed(resp)
-
-
-        ##############################################################################
-        # Disable Site
-        ##############################################################################
-        resp = sase_session.get.sites(site_id=site_id)
-        if resp.cgx_status:
-            siteobj = resp.cgx_content
-            siteobj["admin_state"] = "disabled"
-            resp = sase_session.put.sites(site_id=site_id, data=siteobj)
-            if resp.cgx_status:
-                print("Site {} Disabled".format(site_name))
-            else:
-                print("ERR: Could not disable Site {}".format(site_name))
-                prisma_sase.jd_detailed(resp)
-        else:
-            print("ERR: Could not retrieve site {}".format(site_name))
-            prisma_sase.jd_detailed(resp)
-
-        ##############################################################################
-        # Delete Site
-        ##############################################################################
-        resp = sase_session.delete.sites(site_id=site_id)
-        if resp.cgx_status:
-            print("Site {} Deleted!".format(site_name))
-        else:
-            print("ERR: Could not delete Site {}".format(site_name))
-            prisma_sase.jd_detailed(resp)
-
-    ##############################################################################
-    # Get DC Site ID
-    ##############################################################################
-    DCSites = ["SPoV DC", "BYOS DC1", "BYOS DC2"]
-    for dcsite in DCSites:
-        if dcsite in site_name_id.keys():
-            dcsite_id = site_name_id[dcsite]
-
-            ##############################################################################
-            # Delete Element Shell
-            ##############################################################################
-            data = {
-                "query_params": {
-                    "site_id": {"in": [dcsite_id]}
-                }
-            }
-            resp = sase_session.post.elementshells_query(data=data)
-            if resp.cgx_status:
-                elementshells = resp.cgx_content.get("items", None)
-                print("Num Shells at Site: {}".format(len(elementshells)))
-
-                for elemshell in elementshells:
-                    resp = sase_session.delete.elementshells(site_id=dcsite_id, elementshell_id=elemshell["id"])
-                    if resp.cgx_status:
-                        print("Element Shell: {} deleted".format(elemshell["name"]))
-                    else:
-                        print("ERR: Could not delete Element Shell: {}".format(elemshell["name"]))
-                        prisma_sase.jd_detailed(resp)
-
-            else:
-                print("ERR: Could not retrieve Element Shells")
-                prisma_sase.jd_detailed(resp)
-
-            ##############################################################################
-            # Delete SWIs at Site
-            ##############################################################################
-            resp = sase_session.get.waninterfaces(site_id=dcsite_id)
-            if resp.cgx_status:
-                waninterfaces = resp.cgx_content.get("items", None)
-                for swi in waninterfaces:
-                    resp = sase_session.delete.waninterfaces(site_id=dcsite_id, waninterface_id=swi["id"])
-                    if resp.cgx_status:
-                        print("WAN Interface: {} deleted".format(swi["name"]))
-                    else:
-                        print("ERR: Could not delete WAN Interface: {}".format(swi["name"]))
-                        prisma_sase.jd_detailed(resp)
-            else:
-                print("ERR: Could not retrieve WAN Interfaces")
-                prisma_sase.jd_detailed(resp)
-            ##############################################################################
-            # Delete Servicebinding
-            ##############################################################################
-            resp = sase_session.get.servicebindingmaps()
-            if resp.cgx_status:
-                smaps = resp.cgx_content.get("items", None)
-                for smap in smaps:
-                    smap["service_bindings"] = []
-                    resp = sase_session.put.servicebindingmaps(servicebindingmap_id=smap["id"], data=smap)
-                    if resp.cgx_status:
-                        print("Servicebinding removed from {}".format(smap["name"]))
-
-                        resp = sase_session.delete.servicebindingmaps(servicebindingmap_id=smap["id"])
-                        if resp.cgx_status:
-                            print("Preset Domain deleted")
-                        else:
-                            print("ERR: Could not delete Preset Domain")
-                            prisma_sase.jd_detailed(resp)
-                    else:
-                        print("ERR: Could not update Preset Domain")
-                        prisma_sase.jd_detailed(resp)
-            else:
-                print("ERR: Could not get servicebindingmaps")
-                prisma_sase.jd_detailed(resp)
-            ##############################################################################
-            # Delete Service Endpoint
-            ##############################################################################
-            resp = sase_session.get.serviceendpoints()
-            if resp.cgx_status:
-                itemlist = resp.cgx_content.get("items", None)
-                for item in itemlist:
-                    if item["site_id"] == dcsite_id:
-                        resp = sase_session.delete.serviceendpoints(serviceendpoint_id=item["id"])
-                        if resp.cgx_status:
-                            print("Serviceendpoint deleted")
-                        else:
-                            print("ERR: Could not delete serviceendpoints")
-                            prisma_sase.jd_detailed(resp)
-            else:
-                print("ERR: Could not get serviceendpoints")
-                prisma_sase.jd_detailed(resp)
-            ##############################################################################
-            # Disable DC Site
-            ##############################################################################
-            resp = sase_session.get.sites(site_id=dcsite_id)
-            if resp.cgx_status:
-                siteobj = resp.cgx_content
-                siteobj["admin_state"] = "disabled"
-                resp = sase_session.put.sites(site_id=dcsite_id, data=siteobj)
-                if resp.cgx_status:
-                    print("Site {} Disabled".format(dcsite))
-                else:
-                    print("ERR: Could not disable Site {}".format(dcsite))
-                    prisma_sase.jd_detailed(resp)
-            else:
-                print("ERR: Could not retrieve site {}".format(dcsite))
-                prisma_sase.jd_detailed(resp)
-            ##############################################################################
-            # Delete DC Site
-            ##############################################################################
-            resp = sase_session.delete.sites(site_id=dcsite_id)
-            if resp.cgx_status:
-                print("Site {} Deleted!".format(dcsite))
-            else:
-                print("ERR: Could not delete Site {}".format(dcsite))
-                prisma_sase.jd_detailed(resp)
-
-        else:
-            print("DC Site {} not found".format(dcsite))
-
-    ##############################################################################
-    # Delete WAN Networks
-    ##############################################################################
-    print("Deleting WAN Networks")
-    resp = sase_session.get.wannetworks()
-    if resp.cgx_status:
-        itemlist = resp.cgx_content.get("items", None)
-        for item in itemlist:
-            resp = sase_session.delete.wannetworks(wannetwork_id=item["id"])
-            if resp.cgx_status:
-                print("\t{} Deleted".format(item["name"]))
-            else:
-                print("\t{} Could not be deleted".format(item["name"]))
-    else:
-        print("ERR: Could not retrieve WAN Networks")
-        prisma_sase.jd_detailed(resp)
+    
 
     return
 

@@ -3,7 +3,7 @@
 """
 Script to setup Prisma SDWAN Simplified PoV using a CSV
 Author: tkamath@paloaltonetworks.com
-Version: 1.0.0b13
+Version: 1.0.0b14
 """
 import prisma_sase
 import argparse
@@ -879,7 +879,6 @@ def create_dicts(sase_session):
         policysets = resp.cgx_content.get("items", None)
         for ps in policysets:
             if CUSTOMER_NAME not in ps["name"]:
-                newname = "{} NAT Policy Set (Simple)".format(CUSTOMER_NAME)
 
                 ps["name"] = newname
                 resp = sase_session.put.natpolicysets(natpolicyset_id=ps["id"], data=ps)
@@ -893,27 +892,61 @@ def create_dicts(sase_session):
         prisma_sase.jd_detailed(resp)
 
     #
+    # Performance Sets
+    #
+    print("\tPerformance Sets")
+    defperfpol_id=None
+    perfpol_id=None
+    resp = sase_session.get.perfmgmtpolicysets()
+    if resp.cgx_status:
+        policysets = resp.cgx_content.get("items", None)
+        for ps in policysets:
+            if ps["defaultrule_policyset"]:
+                #
+                # Set to non-default
+                #
+                defperfpol_id = ps["id"]
+
+    else:
+        print("ERR: Could not retrieve Path Policy Sets")
+        prisma_sase.jd_detailed(resp)
+
+    newname = "{} Performance Policy Set (Simple)".format(CUSTOMER_NAME)
+    data = {
+        "clone_from":None,
+        "defaultrule_policyset":False,
+        "link_health_policyrule_order":None,
+        "description":"",
+        "name":newname,
+        "tags":[]
+    }
+    resp = sase_session.post.perfmgmtpolicysets(data=data)
+    if resp.cgx_status:
+        print("\t\t{} created".format(newname))
+        perfpol_id = resp.cgx_content.get("id", None)
+    else:
+        print("ERR: Could not create {}".format(newname))
+        prisma_sase.jd_detailed(resp)
+    #
     # Performance Stack
     #
     print("\tPerformance Stack")
-    resp = sase_session.get.perfmgmtpolicysetstacks()
+    newname = "{} Performance (Simple)".format(CUSTOMER_NAME)
+    data = {
+        "default_policysetstack":False,
+        "defaultrule_policyset_id":defperfpol_id,
+        "description":"",
+        "id":"",
+        "name":newname,
+        "policyset_ids":[perfpol_id],
+        "tags":[]
+    }
+    resp = sase_session.post.perfmgmtpolicysetstacks(data=data)
     if resp.cgx_status:
-        itemlist = resp.cgx_content.get("items", None)
-        for item in itemlist:
-            if item["default_policysetstack"]:
-                PERFSTACKID=item["id"]
-
-                # newname = "{}{}".format(CUSTOMER_NAME, item["name"])
-                # item["name"] = newname
-                # resp = sase_session.put.perfmgmtpolicysetstacks(perfmgmtpolicysetstack_id=item["id"], data=item)
-                # if resp.cgx_status:
-                #     print("\t\tDefault Performance Policy Stack updated to {}".format(item["name"]))
-                # else:
-                #     print("ERR: Could not update Default Performance Policy Stack Name")
-                #     prisma_sase.jd_detailed(resp)
-
+        print("\t\t{} created".format(data["name"]))
+        PERFSTACKID = resp.cgx_content.get("id", None)
     else:
-        print("ERR: Could not retrieve Performance Policy Set Stacks")
+        print("ERR: Could not create {}".format(data["name"]))
         prisma_sase.jd_detailed(resp)
 
     #
@@ -940,6 +973,8 @@ def create_dicts(sase_session):
         prisma_sase.jd_detailed(resp)
 
     defpol_id = None
+    defsecpolicyname = "{} Security Default Rule Policy Set (Simple)".format(CUSTOMER_NAME)
+
     if "Branch Simple Security Policy Stack Default Rule Policy Set (Simple)" in secset_name_id.keys():
         print("\t\tBranch Simple Security Policy Stack Default Rule Policy Set (Simple) already created")
         defpol_id = secset_name_id["Branch Simple Security Policy Stack Default Rule Policy Set (Simple)"]
@@ -955,6 +990,10 @@ def create_dicts(sase_session):
             else:
                 print("ERR: Could not edit Policy Set name for Branch Simple Security Policy Stack Default Rule Policy Set (Simple)")
                 prisma_sase.jd_detailed(resp)
+
+    elif defsecpolicyname in secset_name_id.keys():
+        defpol_id = secset_name_id[defsecpolicyname]
+        print("\t\t{} already exists".format(defsecpolicyname))
 
     else:
         newname = "{} Security Default Rule Policy Set (Simple)".format(CUSTOMER_NAME)
@@ -975,6 +1014,7 @@ def create_dicts(sase_session):
             prisma_sase.jd_detailed(resp)
 
 
+    secpolicyname = "{} Security Policy Set (Simple)".format(CUSTOMER_NAME)
     if "Branch Simple Security Policy Stack Policy Set (Simple)" in secset_name_id.keys():
         print("\tBranch Simple Security Policy Stack Policy Set (Simple) already created")
         NGFWPOLICYSETID = secset_name_id["Branch Simple Security Policy Stack Policy Set (Simple)"]
@@ -992,6 +1032,10 @@ def create_dicts(sase_session):
                 print("ERR: Could not edit Policy Set name for Branch Simple Security Policy Stack Policy Set (Simple)")
                 prisma_sase.jd_detailed(resp)
 
+    elif secpolicyname in secset_name_id.keys():
+        NGFWPOLICYSETID = secset_name_id[secpolicyname]
+        print("\t\t{} already exists".format(secpolicyname))
+
     else:
         newname = "{} Security Policy Set (Simple)".format(CUSTOMER_NAME)
         data = {
@@ -1005,14 +1049,14 @@ def create_dicts(sase_session):
 
         resp = sase_session.post.ngfwsecuritypolicysets(data=data)
         if resp.cgx_status:
-            print("\t{}policy set created".format(newname))
+            print("\t\t{} policy set created".format(newname))
             NGFWPOLICYSETID = resp.cgx_content.get("id")
         else:
             print("ERR: Could not create {}".format(newname))
             prisma_sase.jd_detailed(resp)
 
     if defpol_id is None or NGFWPOLICYSETID is None:
-        print("ERR: Policy ID not found")
+        print("ERR: NGFW Default Policy Set ID not found")
         print(secset_name_id)
         sys.exit()
 
@@ -1028,7 +1072,7 @@ def create_dicts(sase_session):
 
     newname = "{} Security (Simple)".format(CUSTOMER_NAME)
     if "Branch Simple Security Policy Stack (Simple)" in secstack_name_id.keys():
-        print("\tBranch Simple Security Policy Stack (Simple) already exists")
+        print("\t\tBranch Simple Security Policy Stack (Simple) already exists")
         NGFWSTACKID=secstack_name_id["Branch Simple Security Policy Stack (Simple)"]
 
         resp = sase_session.get.ngfwsecuritypolicysetstacks(ngfwsecuritypolicysetstack_id=NGFWSTACKID)
@@ -1045,6 +1089,8 @@ def create_dicts(sase_session):
 
     elif newname in secstack_name_id.keys():
         NGFWSTACKID = secstack_name_id[newname]
+        print("\t\t{} already exists".format(newname))
+
 
     elif "Security (Simple)" in secstack_name_id.keys():
         NGFWSTACKID = secstack_name_id["Security (Simple)"]
@@ -1071,7 +1117,7 @@ def create_dicts(sase_session):
         }
         resp = sase_session.post.ngfwsecuritypolicysetstacks(data=data)
         if resp.cgx_status:
-            print("\t{} created".format(newname))
+            print("\t\t{} created".format(newname))
             NGFWSTACKID = resp.cgx_content.get("id")
         else:
             print("ERR: Could not create {}".format(newname))
@@ -1144,7 +1190,7 @@ def create_dicts(sase_session):
     return
 
 
-def config_interfaces(sase_session, interface_mapping, interface_ipconfig, usedfor_mapping, vlan_ids, site_id, element_id, ion_model):
+def config_interfaces(sase_session, interface_mapping, interface_ipconfig, usedfor_mapping, vlan_ids, site_id, element_id, ion_model, byos):
     interfaces = []
     interface_id_name={}
     interface_name_id = {}
@@ -1385,9 +1431,9 @@ def config_interfaces(sase_session, interface_mapping, interface_ipconfig, usedf
                     prisma_sase.jd_detailed(resp)
                     sys.exit()
 
-    #
+    #######################################################################
     # Update WAN Interfaces
-    #
+    #######################################################################
     for intf in interfaces:
         if intf["name"] in interface_mapping.keys():
             intf["used_for"] = usedfor_mapping[intf["name"]]
@@ -1408,6 +1454,24 @@ def config_interfaces(sase_session, interface_mapping, interface_ipconfig, usedf
                 prisma_sase.jd_detailed(resp)
                 sys.exit()
 
+    #######################################################################
+    # Settings specific to BYOS
+    #######################################################################
+    if byos:
+        for intf in interfaces:
+            if intf["name"] in ["5", "6", "7", "8", "9"]:
+                intf["admin_up"] = False
+                resp = sase_session.put.elementshells_interfaces(site_id=site_id,
+                                                                elementshell_id=element_id,
+                                                                interface_id=intf["id"],
+                                                                data=intf)
+                if resp.cgx_status:
+                    print("\t\tInterface {} set to admin down".format(intf["name"]))
+                else:
+                    print("ERR: Could not update interface {}".format(intf["name"]))
+                    prisma_sase.jd_detailed(resp)
+                    sys.exit()
+
     return
 
 
@@ -1427,7 +1491,7 @@ def get_ha_interface_id(sase_session, site_id, elemshell_id):
     return ha_intf_id
 
 
-def update_bgpconfigs(sase_session, site_id, element_id, as_num):
+def update_bgpconfigs(sase_session, site_id, element_id, as_num, site_type):
     ##############################################################################
     # Set Global BGP Config
     ##############################################################################
@@ -1436,12 +1500,16 @@ def update_bgpconfigs(sase_session, site_id, element_id, as_num):
         bgpconfigs = resp.cgx_content.get("items", None)
         for bgpconf in bgpconfigs:
             bgpconf['local_as_num'] = as_num
+
+            if site_type == "BRANCH":
+                bgpconf["prefix_adv_type"] = "unaggregated"
+
             resp = sase_session.put.bgpconfigs(site_id=site_id,
                                                element_id=element_id,
                                                bgpconfig_id=bgpconf["id"],
                                                data=bgpconf)
             if resp.cgx_status:
-                print("\tUpdated AS# to {}".format(as_num))
+                print("\t\tUpdated AS# to {}".format(as_num))
             else:
                 print("ERR: Could not update AS#")
                 prisma_sase.jd_detailed(resp)
@@ -1458,7 +1526,7 @@ def create_bgp_peer(sase_session, site_id, element_id):
     # Set Global BGP Config
     # Use AS_NUM 65101 for DC
     ##############################################################################
-    update_bgpconfigs(sase_session=sase_session, site_id=site_id, element_id=element_id, as_num=DC_AS_NUM)
+    update_bgpconfigs(sase_session=sase_session, site_id=site_id, element_id=element_id, as_num=DC_AS_NUM, site_type="DC")
     ##############################################################################
     # Edge Peer
     ##############################################################################
@@ -1485,7 +1553,7 @@ def create_bgp_peer(sase_session, site_id, element_id):
     }
     resp = sase_session.post.bgppeers(site_id=site_id, element_id=element_id, data=edge_data)
     if resp.cgx_status:
-        print("\t\tEdge Peer created")
+        print("\t\t\tEdge Peer created")
     else:
         print("ERR: Could not create Edge Peer")
         prisma_sase.jd_detailed(resp)
@@ -1516,7 +1584,7 @@ def create_bgp_peer(sase_session, site_id, element_id):
     }
     resp = sase_session.post.bgppeers(site_id=site_id, element_id=element_id, data=core_data)
     if resp.cgx_status:
-        print("\t\tCore Peer created")
+        print("\t\t\tCore Peer created")
     else:
         print("ERR: Could not create Core Peer")
         prisma_sase.jd_detailed(resp)
@@ -1529,7 +1597,7 @@ def create_bgp_peer_branch(sase_session, site_id, element_id):
     # Set Global BGP Config
     # Use AS_NUM 65111 for Branch
     ##############################################################################
-    update_bgpconfigs(sase_session=sase_session, site_id=site_id, element_id=element_id, as_num=BRANCH_AS_NUM)
+    update_bgpconfigs(sase_session=sase_session, site_id=site_id, element_id=element_id, as_num=BRANCH_AS_NUM, site_type="BRANCH")
     ##############################################################################
     # WAN-Rtr Peer
     ##############################################################################
@@ -1594,6 +1662,37 @@ def create_bgp_peer_branch(sase_session, site_id, element_id):
 
     return
 
+
+def configure_staticroutes(sase_session, site_id, element_id):
+
+    data = {
+        "name": "Default Static Route",
+        "description": None,
+        "tags": None,
+        "destination_prefix": "0.0.0.0/0",
+        "nexthops": [
+            {
+                "nexthop_ip": "192.168.102.1",
+                "nexthop_interface_id": None,
+                "admin_distance": 1,
+                "self": False
+            }
+        ],
+        "scope": "local",
+        "network_context_id": None,
+        "nexthop_reachability_probe": False,
+        "address_family": "ipv4",
+        "vrf_context_id": GLOBALVRFID
+    }
+
+    resp = sase_session.post.staticroutes(site_id=site_id, element_id=element_id, data=data)
+    if resp.cgx_status:
+        print("\t\tDefault route created")
+    else:
+        print("ERR: Could not create a default route")
+        prisma_sase.jd_detailed(resp)
+
+    return
 
 def configure_byos(sase_session, dc_site_id, dc_type):
 
@@ -1696,7 +1795,7 @@ def configure_byos(sase_session, dc_site_id, dc_type):
                                                                      interface_id=intf["id"],
                                                                      data=intf)
                     if resp.cgx_status:
-                        print("\tController port on DC-ION-1 configured")
+                        print("\t\tController port on DC-ION-1 configured")
                     else:
                         print("ERR: Could not configure controller port on DC-ION-1")
                         prisma_sase.jd_detailed(resp)
@@ -1710,7 +1809,7 @@ def configure_byos(sase_session, dc_site_id, dc_type):
                                                                      interface_id=intf["id"],
                                                                      data=intf)
                     if resp.cgx_status:
-                        print("\tPort 1 on DC-ION-1 configured")
+                        print("\t\tPort 1 on DC-ION-1 configured")
                     else:
                         print("ERR: Could not configure port 1 on DC-ION-1")
                         prisma_sase.jd_detailed(resp)
@@ -1725,7 +1824,7 @@ def configure_byos(sase_session, dc_site_id, dc_type):
                                                                      interface_id=intf["id"],
                                                                      data=intf)
                     if resp.cgx_status:
-                        print("\tPort 2 on DC-ION-1 configured")
+                        print("\t\tPort 2 on DC-ION-1 configured")
                     else:
                         print("ERR: Could not configure port 2 on DC-ION-1")
                         prisma_sase.jd_detailed(resp)
@@ -1740,13 +1839,30 @@ def configure_byos(sase_session, dc_site_id, dc_type):
                                                                      interface_id=intf["id"],
                                                                      data=intf)
                     if resp.cgx_status:
-                        print("\tPort 3 on DC-ION-1 configured")
+                        print("\t\tPort 3 on DC-ION-1 configured")
                     else:
                         print("ERR: Could not configure port 3 on DC-ION-1")
                         prisma_sase.jd_detailed(resp)
 
-        print("\tConfiguring BGP Peer on DC-ION-1")
+                elif intf["name"] in ["4", "5", "6", "7", "8", "9"]:
+                    intf["admin_up"] = False
+                    intf["ipv4_config"] = IPV4_TEMPLATE_DHCP
+                    resp = sase_session.put.elementshells_interfaces(site_id=dc_site_id,
+                                                                     elementshell_id=dc_elemshell1_id,
+                                                                     interface_id=intf["id"],
+                                                                     data=intf)
+                    if resp.cgx_status:
+                        print("\t\tPort {} on DC-ION-1 configured".format(intf["name"]))
+                    else:
+                        print("ERR: Could not configure port {} on DC-ION-1".format(intf["name"]))
+                        prisma_sase.jd_detailed(resp)
+
+
+        print("\t\tConfiguring BGP Peer on DC-ION-1")
         create_bgp_peer(sase_session=sase_session, site_id=dc_site_id, element_id=dc_elem1_id)
+        
+        print("\t\tConfiguring Default Static Route on DC-ION-1")
+        configure_staticroutes(sase_session=sase_session, site_id=dc_site_id, element_id=dc_elem1_id)
 
     else:
         print("ERR: Could not create element shell for DC ION 1")
@@ -1783,7 +1899,7 @@ def configure_byos(sase_session, dc_site_id, dc_type):
                                                                      interface_id=intf["id"],
                                                                      data=intf)
                     if resp.cgx_status:
-                        print("\tController port on DC-ION-2 configured")
+                        print("\t\tController port on DC-ION-2 configured")
                     else:
                         print("ERR: Could not configure controller port on DC-ION-2")
                         prisma_sase.jd_detailed(resp)
@@ -1797,7 +1913,7 @@ def configure_byos(sase_session, dc_site_id, dc_type):
                                                                      interface_id=intf["id"],
                                                                      data=intf)
                     if resp.cgx_status:
-                        print("\tPort 1 on DC-ION-2 configured")
+                        print("\t\tPort 1 on DC-ION-2 configured")
                     else:
                         print("ERR: Could not configure port 1 on DC-ION-2")
                         prisma_sase.jd_detailed(resp)
@@ -1812,7 +1928,7 @@ def configure_byos(sase_session, dc_site_id, dc_type):
                                                                      interface_id=intf["id"],
                                                                      data=intf)
                     if resp.cgx_status:
-                        print("\tPort 2 on DC-ION-2 configured")
+                        print("\t\tPort 2 on DC-ION-2 configured")
                     else:
                         print("ERR: Could not configure port 2 on DC-ION-2")
                         prisma_sase.jd_detailed(resp)
@@ -1827,13 +1943,29 @@ def configure_byos(sase_session, dc_site_id, dc_type):
                                                                      interface_id=intf["id"],
                                                                      data=intf)
                     if resp.cgx_status:
-                        print("\tPort 3 on DC-ION-2 configured")
+                        print("\t\tPort 3 on DC-ION-2 configured")
                     else:
                         print("ERR: Could not configure port 3 on DC-ION-2")
                         prisma_sase.jd_detailed(resp)
 
-        print("\tConfiguring BGP Peer on DC-ION-2")
+                elif intf["name"] in ["4", "5", "6", "7", "8", "9"]:
+                    intf["admin_up"] = False
+                    intf["ipv4_config"] = IPV4_TEMPLATE_DHCP
+                    resp = sase_session.put.elementshells_interfaces(site_id=dc_site_id,
+                                                                     elementshell_id=dc_elemshell2_id,
+                                                                     interface_id=intf["id"],
+                                                                     data=intf)
+                    if resp.cgx_status:
+                        print("\t\tPort {} on DC-ION-2 configured".format(intf["name"]))
+                    else:
+                        print("ERR: Could not configure port {} on DC-ION-2".format(intf["name"]))
+                        prisma_sase.jd_detailed(resp)
+
+        print("\t\tConfiguring BGP Peer on DC-ION-2")
         create_bgp_peer(sase_session=sase_session, site_id=dc_site_id, element_id=dc_elem2_id)
+        
+        print("\t\tConfiguring Default Static Route on DC-ION-2")
+        configure_staticroutes(sase_session=sase_session, site_id=dc_site_id, element_id=dc_elem2_id)
 
     else:
         print("ERR: Could not create element shell for DC ION 2")
@@ -1967,7 +2099,7 @@ def configure_byos(sase_session, dc_site_id, dc_type):
                                                                              interface_id=intf["id"],
                                                                              data=intf)
                             if resp.cgx_status:
-                                print("\tController port on DC2-ION-1 configured")
+                                print("\t\tController port on DC2-ION-1 configured")
                             else:
                                 print("ERR: Could not configure controller port on DC2-ION-1")
                                 prisma_sase.jd_detailed(resp)
@@ -1981,7 +2113,7 @@ def configure_byos(sase_session, dc_site_id, dc_type):
                                                                              interface_id=intf["id"],
                                                                              data=intf)
                             if resp.cgx_status:
-                                print("\tPort 1 on DC2-ION-1 configured")
+                                print("\t\tPort 1 on DC2-ION-1 configured")
                             else:
                                 print("ERR: Could not configure port 1 on DC2-ION-1")
                                 prisma_sase.jd_detailed(resp)
@@ -1996,7 +2128,7 @@ def configure_byos(sase_session, dc_site_id, dc_type):
                                                                              interface_id=intf["id"],
                                                                              data=intf)
                             if resp.cgx_status:
-                                print("\tPort 2 on DC2-ION-1 configured")
+                                print("\t\tPort 2 on DC2-ION-1 configured")
                             else:
                                 print("ERR: Could not configure port 2 on DC2-ION-1")
                                 prisma_sase.jd_detailed(resp)
@@ -2011,13 +2143,29 @@ def configure_byos(sase_session, dc_site_id, dc_type):
                                                                              interface_id=intf["id"],
                                                                              data=intf)
                             if resp.cgx_status:
-                                print("\tPort 3 on DC2-ION-1 configured")
+                                print("\t\tPort 3 on DC2-ION-1 configured")
                             else:
                                 print("ERR: Could not configure port 3 on DC2-ION-1")
                                 prisma_sase.jd_detailed(resp)
 
-                print("\tConfiguring BGP Peer on DC2-ION-1")
+                        elif intf["name"] in ["4", "5", "6", "7", "8", "9"]:
+                            intf["admin_up"] = False
+                            intf["ipv4_config"] = IPV4_TEMPLATE_DHCP
+                            resp = sase_session.put.elementshells_interfaces(site_id=dc2_site_id,
+                                                                            elementshell_id=dc2_elemshell1_id,
+                                                                            interface_id=intf["id"],
+                                                                            data=intf)
+                            if resp.cgx_status:
+                                print("\t\tPort {} on DC-ION-1 configured".format(intf["name"]))
+                            else:
+                                print("ERR: Could not configure port {} on DC-ION-1".format(intf["name"]))
+                                prisma_sase.jd_detailed(resp)
+
+                print("\t\tConfiguring BGP Peer on DC2-ION-1")
                 create_bgp_peer(sase_session=sase_session, site_id=dc2_site_id, element_id=dc2_elem1_id)
+                
+                print("\t\tConfiguring Default Static Route on DC2-ION-1")
+                configure_staticroutes(sase_session=sase_session, site_id=dc2_site_id, element_id=dc2_elem1_id)
 
             else:
                 print("ERR: Could not create element shell for DC2 ION 1")
@@ -2091,6 +2239,8 @@ def go():
     #############################################################################
     # Validate file syntax
     #############################################################################
+    print("\n\n*************************************************\n{} [{}]\n*************************************************\n\n".format(sase_session.tenant_name, 
+                                                                                                                                    sase_session.tenant_id))
     spovdata = pd.read_csv(filename, dtype=str)
     spovdata = spovdata.astype(object).where(pd.notnull(spovdata), None)
 
@@ -2365,7 +2515,11 @@ def go():
             if str.lower(zone) in zone_name_id.keys():
                 print("\t{} exists".format(zone))
             else:
-                zone_data = {"name": zone, "description": None}
+                zone_data = {
+                    "name": zone, 
+                    "description": None, 
+                    "tcp_allow_non_syn": False
+                }
                 resp = sase_session.post.securityzones(data=zone_data)
                 if resp.cgx_status:
                     print("\t{} created".format(zone))
@@ -2809,14 +2963,14 @@ def go():
         config_interfaces(sase_session=sase_session, interface_mapping=interface_mapping_ion1,
                           interface_ipconfig=interface_ipconfig_ion1, usedfor_mapping=usedfor_mapping_ion1,
                           vlan_ids=VLAN_IDS, site_id=SITE_ID,
-                          element_id=ELEM_SHELL_ID_1, ion_model=BRANCH_MODEL)
+                          element_id=ELEM_SHELL_ID_1, ion_model=BRANCH_MODEL, byos=byos)
 
         if HA:
             print("\t{} ION 2".format(SITE_NAME))
             config_interfaces(sase_session=sase_session, interface_mapping=interface_mapping_ion2,
                               interface_ipconfig=interface_ipconfig_ion2, usedfor_mapping=usedfor_mapping_ion2,
                               vlan_ids=VLAN_IDS, site_id=SITE_ID,
-                              element_id=ELEM_SHELL_ID_2, ion_model=BRANCH_MODEL)
+                              element_id=ELEM_SHELL_ID_2, ion_model=BRANCH_MODEL, byos=byos)
 
         ##############################################################################
         #
@@ -3507,25 +3661,25 @@ def go():
                         ##############################################################################
                         # Modify Rule: default
                         ##############################################################################
-                        # if rule["name"] == "default":
-                        # #     rule["paths_allowed"] = {
-                        # #         "active_paths": [{"path_type": "servicelink", "label": "public-*"}],
-                        # #         "backup_paths": [{"path_type": "direct", "label": "public-*"}],
-                        # #         "l3_failure_paths": None
-                        # #     }
-                        #     rule["service_context"] = {
-                        #         "type": "allowed-transit",
-                        #         "backup_service_label_id": None,
-                        #         "active_service_label_id": servicelabel_id,
+                        if rule["name"] == "default":
+                        #     rule["paths_allowed"] = {
+                        #         "active_paths": [{"path_type": "servicelink", "label": "public-*"}],
+                        #         "backup_paths": [{"path_type": "direct", "label": "public-*"}],
+                        #         "l3_failure_paths": None
                         #     }
-                        #     resp = sase_session.put.networkpolicyrules(networkpolicyset_id=defaultrule_policyset_id,
-                        #                                       networkpolicyrule_id=rule["id"],
-                        #                                       data=rule)
-                        #     if resp.cgx_status:
-                        #         print("\tdefault rule modified")
-                        #     else:
-                        #         print("ERR: Could not modify the default rule")
-                        #         prisma_sase.jd_detailed(resp)
+                            rule["service_context"] = {
+                                "type": "allowed-transit",
+                                "backup_service_label_id": None,
+                                "active_service_label_id": servicelabel_id,
+                            }
+                            resp = sase_session.put.networkpolicyrules(networkpolicyset_id=defaultrule_policyset_id,
+                                                              networkpolicyrule_id=rule["id"],
+                                                              data=rule)
+                            if resp.cgx_status:
+                                print("\tdefault rule modified")
+                            else:
+                                print("ERR: Could not modify the default rule")
+                                prisma_sase.jd_detailed(resp)
                         ##############################################################################
                         # Modify Rule: enterprise-default
                         ##############################################################################
