@@ -3,7 +3,7 @@
 """
 Script to setup Prisma SDWAN Simplified PoV using a CSV
 Author: tkamath@paloaltonetworks.com
-Version: 1.0.0b14
+Version: 1.0.0b15
 """
 import prisma_sase
 import argparse
@@ -2515,7 +2515,13 @@ def go():
             if str.lower(zone) in zone_name_id.keys():
                 print("\t{} exists".format(zone))
             else:
-                zone_data = {
+                if prisma_sase.version < "6.5.1b1":
+                    zone_data = {
+                        "name": zone, 
+                        "description": None
+                    }
+                else:
+                    zone_data = {
                     "name": zone, 
                     "description": None, 
                     "tcp_allow_non_syn": False
@@ -2729,8 +2735,8 @@ def go():
         usedfor_mapping_ion1={}
         interface_mapping_ion2={}
         usedfor_mapping_ion2={}
-        interface_ipconfig_ion1 ={}
-        interface_ipconfig_ion2 ={}
+        interface_ipconfig_ion1={}
+        interface_ipconfig_ion2={}
 
         ##############################################################################
         # LAN Interface on ION 1 & ION 2

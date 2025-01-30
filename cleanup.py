@@ -3,7 +3,7 @@
 """
 Script to setup Prisma SDWAN Simplified PoV
 Author: tkamath@paloaltonetworks.com
-Version: 1.0.0b14
+Version: 1.0.0b15
 """
 import prisma_sase
 import argparse
@@ -519,7 +519,22 @@ def go():
         print("ERR: Could not retrieve NGFW Sets")
         prisma_sase.jd_detailed(resp)
     
-
+    ##############################################################################
+    # Security Zones
+    ##############################################################################
+    resp = sase_session.get.securityzones()
+    if resp.cgx_status:
+        itemlist = resp.cgx_content.get("items", None)
+        for item in itemlist:
+            resp = sase_session.delete.securityzones(securityzone_id=item["id"])
+            if resp.cgx_status:
+                print("Security Zone {} deleted".format(item["name"]))
+            else:
+                print("ERR: Could not delete Security Zone {}".format(item["name"]))
+                prisma_sase.jd_detailed(resp)
+    else:
+        print("ERR: Could not retrieve Security Zones")
+        prisma_sase.jd_detailed(resp)
     return
 
 if __name__ == "__main__":
